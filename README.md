@@ -8,6 +8,10 @@ leaves behind a `SUMMARY.md` and a rendered `results.html` you can open in your
 file previewer (e.g. Finder Quick Look). A local web dashboard shows the state of
 every project at a glance. That's the whole idea.
 
+![The Understudy dashboard](docs/dashboard.png)
+
+*The dashboard, on demo data: every project at a glance — whose court the ball is in (health dot), how stale it is, the next step, and quick actions. Queued projects run next; processed ones wait for your input.*
+
 It is deliberately **not** a framework. There is no database, no message broker,
 no web service to keep running, no DSL. The unit of work is a folder; the state
 lives in Markdown and HTML files you can read, edit, diff, and back up with the
