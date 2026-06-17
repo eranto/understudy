@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Understudy</title>
+<style>
+:root {
+  --bg: #f7f7f8;
+  --card: #ffffff;
+  --border: #e3e3e6;
+  --text: #1a1a1c;
+  --muted: #6c6c75;
+  --accent: #2563eb;
+  --queued: #b45309;
+  --queued-bg: #fef3c7;
+  --done: #15803d;
+  --done-bg: #dcfce7;
+  --needs: #b91c1c;
+  --needs-bg: #fee2e2;
+  --progress: #1d4ed8;
+  --progress-bg: #dbeafe;
+  --idle: #475569;
+  --idle-bg: #f1f5f9;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+.topbar {
+  background: white;
+  border-bottom: 1px solid var(--border);
+  padding: 14px 24px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.topbar .meta { color: var(--muted); font-size: 12px; }
+button {
+  font: inherit;
+  border: 1px solid var(--border);
+  background: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--text);
+}
+button:hover { background: #f3f3f5; }
+button:disabled { opacity: 0.6; cursor: not-allowed; }
+button.primary { background: var(--accent); color: white; border-color: var(--accent); }
+button.primary:hover { background: #1d4fd8; }
+main { padding: 20px 24px; max-width: 1200px; margin: 0 auto; }
+section { margin-bottom: 28px; }
+section h2 {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 10px 0;
+  font-weight: 600;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 12px;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .name { font-weight: 600; font-size: 15px; word-break: break-word; flex: 1 1 auto; }
+.card .meta { color: var(--muted); font-size: 12px; }
+.card .next-step { font-style: italic; }
+.checkbox-row { display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.checkbox-row input { margin: 0; }
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.pill-queued   { background: var(--queued-bg);   color: var(--queued); }
+.pill-done     { background: var(--done-bg);     color: var(--done); }
+.pill-needs    { background: var(--needs-bg);    color: var(--needs); }
+.pill-progress { background: var(--progress-bg); color: var(--progress); }
+.pill-idle     { background: var(--idle-bg);     color: var(--idle); }
+.card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+.card .actions button,
+.card .actions a.btn {
+  font-size: 12px;
+  padding: 4px 10px;
+}
+.card .actions .future-btn,
+.card .actions .archive-btn,
+.card .actions .rename-btn {
+  color: var(--muted);
+  border-color: transparent;
+  background: transparent;
+}
+.card .actions .future-btn:hover,
+.card .actions .archive-btn:hover,
+.card .actions .rename-btn:hover {
+  background: #f3f3f5;
+  border-color: var(--border);
+  color: var(--text);
+}
+/* First of the right-aligned pair pushes both to the right edge. */
+.card .actions .future-btn { margin-left: auto; }
+.card.archived { opacity: 0.78; }
+.card.future { opacity: 0.78; }
+section details summary {
+  cursor: pointer;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin: 0 0 10px 0;
+  font-weight: 600;
+  list-style: none;
+  display: inline-block;
+  user-select: none;
+}
+section details summary::-webkit-details-marker { display: none; }
+section details summary::before {
+  content: "▸ ";
+  display: inline-block;
+  width: 1em;
+  transition: transform 0.1s ease;
+}
+section details[open] summary::before { content: "▾ "; }
+section details > .grid { margin-top: 4px; }
+a.btn {
+  display: inline-block;
+  border: 1px solid var(--border);
+  background: white;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+}
+a.btn:hover { background: #f3f3f5; }
+.empty {
+  color: var(--muted);
+  font-style: italic;
+  padding: 8px 0;
+}
+/* modal */
+.modal-backdrop {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 50;
+  padding: 20px;
+}
+.modal {
+  background: white;
+  border-radius: 10px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 100%;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+}
+.modal .modal-header {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+}
+.modal .modal-header h2 { margin: 0; font-size: 16px; font-weight: 600; }
+.modal .modal-body { padding: 16px 18px; overflow: auto; flex: 1; }
+.modal .modal-footer {
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+}
+.modal pre {
+  background: #f7f7f8;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+}
+label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+input[type="text"], textarea {
+  width: 100%;
+  font: inherit;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+}
+input[type="text"]:focus, textarea:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+  border-color: var(--accent);
+}
+textarea {
+  min-height: 180px;
+  resize: vertical;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+}
+.field { margin-bottom: 14px; }
+.error { color: var(--needs); font-size: 13px; margin-top: 8px; min-height: 1em; }
+/* ----- project-health status light ----- */
+.top { display: flex; align-items: center; gap: 6px; }
+.dot { display: inline-block; width: 11px; height: 11px; border-radius: 50%;
+       flex: 0 0 auto; box-shadow: 0 0 0 1px rgba(0,0,0,0.12) inset; }
+.dot-active   { background: #2ea043; }
+.dot-move     { background: #d4a017; }
+.dot-slipping { background: #e8590c; }
+.dot-stalled  { background: #d1242f; }
+.dot-queued, .dot-working { background: #1f6feb; }
+.dot-draft, .dot-archived { background: #b0b4ba; }
+.health { font-size: 12px; color: #6a737d; margin-top: 3px; }
+.health-stalled { color: #d1242f; font-weight: 600; }
+.health-slipping { color: #e8590c; font-weight: 600; }
+.health-move { color: #b8860b; }
+.legend { font-size: 12px; color: #6a737d; font-weight: 400; margin-left: 8px; }
+.legend .dot { width: 9px; height: 9px; margin: 0 3px 0 10px; }
+.sort-btn { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; padding: 2px 8px; margin-left: 12px; color: var(--muted); vertical-align: middle; }
+</style>
+</head>
+<body>
+<div class="topbar">
+  <h1>Understudy</h1>
+  <span class="meta" id="last-fetched"></span>
+  <span class="spacer"></span>
+  <button id="refresh-btn">Refresh</button>
+  <button class="primary" id="new-project-btn">+ New project</button>
+</div>
+
+<main>
+  <section>
+    <h2>Queued — runs next hour</h2>
+    <div class="grid" id="queued"></div>
+  </section>
+  <section>
+    <h2>In your court — needs you
+      <span class="legend"><span class="dot dot-stalled"></span>stalled<span class="dot dot-slipping"></span>slipping<span class="dot dot-move"></span>your move<span class="dot dot-active"></span>active</span>
+      <button id="idle-sort-btn" class="sort-btn" title="Click to cycle sort order"></button>
+    </h2>
+    <div class="grid" id="idle"></div>
+  </section>
+  <section>
+    <h2>Under assembly</h2>
+    <div class="grid" id="assembling"></div>
+  </section>
+  <section>
+    <details>
+      <summary>Future — parked, not processed</summary>
+      <div class="grid" id="future"></div>
+    </details>
+  </section>
+  <section>
+    <details>
+      <summary>Archived</summary>
+      <div class="grid" id="archived"></div>
+    </details>
+  </section>
+</main>
+
+<div id="modal-root"></div>
+
+<script>
+const $ = (sel, root=document) => root.querySelector(sel);
+
+function el(tag, attrs={}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === 'class') e.className = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v);
+  }
+  for (const c of children.flat()) {
+    if (c == null) continue;
+    e.append(c.nodeType ? c : document.createTextNode(c));
+  }
+  return e;
+}
+
+function pill(state, status, p) {
+  if (state === 'queued') return el('span', {class: 'pill pill-queued'}, 'queued');
+  if (state === 're-engaging') return el('span', {class: 'pill pill-queued'}, (p && p.pending_is_debrief) ? 'queued — debrief' : 'queued — new round');
+  if (state === 'idle') {
+    if (status === 'done') return el('span', {class: 'pill pill-done', title: 'Processed — ready for your next input (drop another round anytime)'}, 'awaiting input');
+    if (status === 'needs-input') return el('span', {class: 'pill pill-needs'}, 'needs-input');
+    if (status === 'in-progress') return el('span', {class: 'pill pill-progress'}, 'in-progress');
+    return el('span', {class: 'pill pill-idle'}, status || 'idle');
+  }
+  if (state === 'assembling') return el('span', {class: 'pill pill-idle'}, 'assembling');
+  return el('span', {class: 'pill pill-idle'}, state);
+}
+
+function formatTimestamp(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    return d.toLocaleString();
+  } catch { return iso; }
+}
+
+const LIGHT_LABEL = {active: 'active', move: 'your move', slipping: 'slipping',
+  stalled: 'stalled', queued: 'in queue', working: 'working',
+  draft: 'draft', archived: 'archived'};
+const MOMENTUM_GLYPH = {active: '🔥', ticking: '🌤', dormant: '💤'};
+
+function healthText(p) {
+  const h = p.health || {};
+  let s = LIGHT_LABEL[h.light] || h.light || '';
+  if (h.court === 'you' && h.stale_days != null) {
+    s += ' · ' + h.stale_days + 'd in your court';
+  }
+  if (h.momentum) s += ' · ' + (MOMENTUM_GLYPH[h.momentum] || '') + ' ' + h.momentum;
+  return s;
+}
+
+function projectCard(p) {
+  const folder = encodeURIComponent(p.display_name);
+  const h = p.health || {};
+  const card = el('div', {class: 'card' + (p.is_archived ? ' archived' : '') + (p.is_future ? ' future' : '')},
+    el('div', {class: 'top'},
+      el('span', {class: 'dot dot-' + (h.light || 'draft'), title: healthText(p)}),
+      el('span', {class: 'name'}, p.display_name),
+      pill(p.state, p.status, p)
+    )
+  );
+
+  const ht = healthText(p);
+  if (ht) card.append(el('div', {class: 'health health-' + (h.light || '')}, ht));
+
+  if (p.next_step) card.append(el('div', {class: 'meta next-step'}, 'Next: ' + p.next_step));
+
+  const metaBits = [];
+  if (p.last_processed) metaBits.push('Last processed: ' + formatTimestamp(p.last_processed));
+  if (p.rounds_seen > 0) metaBits.push(p.rounds_seen + ' round' + (p.rounds_seen > 1 ? 's' : ''));
+  if (p.actions_count > 0) metaBits.push(p.actions_count + ' action' + (p.actions_count > 1 ? 's' : ''));
+  if (p.has_policy) metaBits.push('POLICY.md');
+  if (metaBits.length) card.append(el('div', {class: 'meta'}, metaBits.join(' · ')));
+
+  const actions = el('div', {class: 'actions'});
+
+  if (p.has_summary) {
+    actions.append(el('button', {onclick: () => openSummary(p)}, 'View summary'));
+  }
+  if (p.has_results) {
+    actions.append(el('a', {class: 'btn', href: `/api/projects/${folder}/results`, target: '_blank', rel: 'noopener'}, 'Open results'));
+  }
+  if (p.has_actions) {
+    actions.append(el('button', {onclick: () => openActions(p)}, 'View actions'));
+  }
+  if (p.has_lessons) {
+    actions.append(el('button', {onclick: () => openLessons(p)}, 'View lessons'));
+  }
+
+  if (p.is_archived) {
+    actions.append(el('button', {class: 'primary', onclick: (ev) => unarchiveProject(p, ev.currentTarget)}, 'Unarchive'));
+  } else if (p.is_future) {
+    actions.append(el('button', {class: 'primary', title: 'Move back to the Tasks root', onclick: (ev) => unfutureProject(p, ev.currentTarget)}, 'Bring back'));
+  } else {
+    if (p.has_instructions) {
+      actions.append(el('button', {onclick: () => openEditInstructions(p)}, 'Edit instructions'));
+    }
+    if (p.state === 'idle') {
+      actions.append(el('button', {class: 'primary', onclick: () => openNewRound(p)}, '+ New round'));
+    }
+    if (p.state === 'idle' && p.has_summary) {
+      actions.append(el('button', {onclick: () => openRecordAction(p)}, 'Record action'));
+    }
+    actions.append(el('button', {class: 'future-btn', title: 'Park in Future/ (not processed until brought back)', onclick: (ev) => futureProject(p, ev.currentTarget)}, 'Move to Future'));
+    actions.append(el('button', {class: 'archive-btn', title: 'Move to Archive/', onclick: (ev) => archiveProject(p, ev.currentTarget)}, 'Archive'));
+  }
+
+  actions.append(el('button', {class: 'rename-btn', title: 'Rename this project folder', onclick: () => openRename(p)}, 'Rename'));
+
+  if (actions.childNodes.length) card.append(actions);
+  return card;
+}
+
+let projects = [];
+
+// ---- "In your court" sort modes ----
+// Staleness (days the ball has sat with you) is the base signal; null sinks last.
+const _stale = (p) => (p.health && p.health.stale_days != null) ? p.health.stale_days : -1;
+const _byName = (a, b) => a.display_name.localeCompare(b.display_name);
+
+// "Best" score: surface what clears the most for the least friction — things
+// actively blocking on you (needs-input) and going stale, that you can act on
+// right now (a concrete next step), nudged by whether the project is still warm.
+function idleScore(p) {
+  const h = p.health || {};
+  let s = h.stale_days != null ? h.stale_days : 0;   // urgency from neglect
+  if (p.status === 'needs-input') s += 7;            // you're the gate → ~+1 week
+  if (p.next_step) s += 2;                           // actionable now
+  if (h.momentum === 'active') s += 1;               // warm — keep it moving
+  else if (h.momentum === 'ticking') s += 0.5;
+  return s;
+}
+
+const IDLE_SORTS = {
+  smart: { label: 'Best',      cmp: (a, b) => (idleScore(b) - idleScore(a)) || _byName(a, b) },
+  new:   { label: 'New first', cmp: (a, b) => (_stale(a) - _stale(b)) || _byName(a, b) },
+  old:   { label: 'Old first', cmp: (a, b) => (_stale(b) - _stale(a)) || _byName(a, b) },
+};
+const IDLE_SORT_CYCLE = ['smart', 'new', 'old'];
+let idleSort = IDLE_SORTS[localStorage.getItem('idleSort')] ? localStorage.getItem('idleSort') : 'smart';
+
+async function fetchProjects() {
+  try {
+    const res = await fetch('/api/projects');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    projects = await res.json();
+    render();
+    $('#last-fetched').textContent = 'Last refreshed ' + new Date().toLocaleTimeString();
+  } catch (e) {
+    $('#last-fetched').textContent = 'Refresh failed: ' + e.message;
+  }
+}
+
+function render() {
+  const buckets = { queued: [], idle: [], assembling: [], future: [], archived: [] };
+  for (const p of projects) {
+    if (p.is_archived) buckets.archived.push(p);
+    else if (p.is_future) buckets.future.push(p);
+    else if (p.state === 'queued' || p.state === 're-engaging') buckets.queued.push(p);
+    else if (p.state === 'idle') buckets.idle.push(p);
+    else buckets.assembling.push(p);
+  }
+  // "In your court" sort is switchable via the section's Sort button (idleSort).
+  buckets.idle.sort(IDLE_SORTS[idleSort].cmp);
+  const sortBtn = $('#idle-sort-btn');
+  if (sortBtn) sortBtn.textContent = 'Sort: ' + IDLE_SORTS[idleSort].label;
+  buckets.queued.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  buckets.assembling.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  buckets.future.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  buckets.archived.sort((a, b) => a.display_name.localeCompare(b.display_name));
+
+  const emptyMessages = {
+    queued: 'Nothing queued.',
+    idle: 'No processed projects yet.',
+    assembling: 'No folders under assembly.',
+    future: 'No parked projects.',
+    archived: 'No archived projects.',
+  };
+
+  for (const [key, list] of Object.entries(buckets)) {
+    const root = $('#' + key);
+    root.innerHTML = '';
+    if (list.length === 0) {
+      root.append(el('div', {class: 'empty'}, emptyMessages[key]));
+    } else {
+      for (const p of list) root.append(projectCard(p));
+    }
+  }
+}
+
+async function archiveProject(p, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/archive`, {method: 'POST'});
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({error: res.statusText}));
+      alert('Archive failed: ' + (j.error || res.statusText));
+      if (btn) btn.disabled = false;
+      return;
+    }
+    await fetchProjects();
+  } catch (e) {
+    alert('Archive failed: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function unarchiveProject(p, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/unarchive`, {method: 'POST'});
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({error: res.statusText}));
+      alert('Unarchive failed: ' + (j.error || res.statusText));
+      if (btn) btn.disabled = false;
+      return;
+    }
+    await fetchProjects();
+  } catch (e) {
+    alert('Unarchive failed: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function futureProject(p, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/future`, {method: 'POST'});
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({error: res.statusText}));
+      alert('Move to Future failed: ' + (j.error || res.statusText));
+      if (btn) btn.disabled = false;
+      return;
+    }
+    await fetchProjects();
+  } catch (e) {
+    alert('Move to Future failed: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function unfutureProject(p, btn) {
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/unfuture`, {method: 'POST'});
+    if (!res.ok) {
+      const j = await res.json().catch(() => ({error: res.statusText}));
+      alert('Bring back failed: ' + (j.error || res.statusText));
+      if (btn) btn.disabled = false;
+      return;
+    }
+    await fetchProjects();
+  } catch (e) {
+    alert('Bring back failed: ' + e.message);
+    if (btn) btn.disabled = false;
+  }
+}
+
+// ---- Modal ----
+
+function showModal(buildContent) {
+  const root = $('#modal-root');
+  root.innerHTML = '';
+  const backdrop = el('div', {
+    class: 'modal-backdrop',
+    onclick: (e) => { if (e.target === backdrop) closeModal(); },
+  });
+  const modal = el('div', {class: 'modal'});
+  backdrop.append(modal);
+  root.append(backdrop);
+  buildContent(modal);
+}
+function closeModal() { $('#modal-root').innerHTML = ''; }
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+async function openProjectText(p, kind, title) {
+  showModal((modal) => {
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, title + ' — ' + p.display_name)),
+      el('div', {class: 'modal-body'}, el('pre', {id: 'proj-text-pre'}, 'Loading…')),
+      el('div', {class: 'modal-footer'}, el('button', {onclick: closeModal}, 'Close'))
+    );
+  });
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/${kind}`);
+    const text = await res.text();
+    $('#proj-text-pre').textContent = text;
+  } catch (e) {
+    $('#proj-text-pre').textContent = 'Error: ' + e.message;
+  }
+}
+const openSummary = (p) => openProjectText(p, 'summary', 'Summary');
+const openActions = (p) => openProjectText(p, 'actions', 'Actions');
+const openLessons = (p) => openProjectText(p, 'lessons', 'Lessons');
+
+async function openEditInstructions(p) {
+  const textarea = el('textarea', {placeholder: 'Loading…'});
+  textarea.disabled = true;
+  const errorBox = el('div', {class: 'error'});
+  const submit = el('button', {class: 'primary'}, 'Save changes');
+  submit.disabled = true;
+  submit.addEventListener('click', async () => {
+    const text = textarea.value.trim();
+    if (!text) { errorBox.textContent = 'Instructions cannot be empty.'; return; }
+    errorBox.textContent = '';
+    submit.disabled = true;
+    try {
+      const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/instructions`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({instructions: text}),
+      });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({error: res.statusText}));
+        errorBox.textContent = j.error || 'Failed';
+        submit.disabled = false;
+        return;
+      }
+      closeModal();
+      await fetchProjects();
+    } catch (e) {
+      errorBox.textContent = e.message;
+      submit.disabled = false;
+    }
+  });
+
+  showModal((modal) => {
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, 'Edit pending instructions — ' + p.display_name)),
+      el('div', {class: 'modal-body'},
+        el('div', {class: 'field'},
+          el('label', {}, 'Instructions (saved as instructions.md)'),
+          textarea
+        ),
+        errorBox
+      ),
+      el('div', {class: 'modal-footer'},
+        el('button', {onclick: closeModal}, 'Cancel'),
+        submit
+      )
+    );
+  });
+
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/instructions`);
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    textarea.value = await res.text();
+    textarea.placeholder = '';
+    textarea.disabled = false;
+    submit.disabled = false;
+    textarea.focus();
+  } catch (e) {
+    errorBox.textContent = 'Failed to load current instructions: ' + e.message;
+    textarea.placeholder = '';
+    textarea.disabled = false;
+  }
+}
+
+function openNewRound(p) {
+  showModal((modal) => {
+    const errorBox = el('div', {class: 'error'});
+    const textarea = el('textarea', {placeholder: 'Describe what you want done in this round…'});
+    const submit = el('button', {class: 'primary', onclick: async () => {
+      const text = textarea.value.trim();
+      if (!text) { errorBox.textContent = 'Instructions cannot be empty.'; return; }
+      errorBox.textContent = '';
+      submit.disabled = true;
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/round`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({instructions: text}),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({error: res.statusText}));
+          errorBox.textContent = j.error || 'Failed';
+          submit.disabled = false;
+          return;
+        }
+        closeModal();
+        await fetchProjects();
+      } catch (e) {
+        errorBox.textContent = e.message;
+        submit.disabled = false;
+      }
+    }}, 'Queue new round');
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, 'New round — ' + p.display_name)),
+      el('div', {class: 'modal-body'},
+        el('div', {class: 'field'},
+          el('label', {}, 'Instructions for this round'),
+          textarea
+        ),
+        errorBox
+      ),
+      el('div', {class: 'modal-footer'},
+        el('button', {onclick: closeModal}, 'Cancel'),
+        submit
+      )
+    );
+    setTimeout(() => textarea.focus(), 30);
+  });
+}
+
+function openRecordAction(p) {
+  showModal((modal) => {
+    const errorBox = el('div', {class: 'error'});
+    const textarea = el('textarea', {placeholder: 'Describe the real-world action you took based on this deliverable…'});
+    const archiveCheckbox = el('input', {type: 'checkbox'});
+    const submit = el('button', {class: 'primary', onclick: async () => {
+      const text = textarea.value.trim();
+      if (!text) { errorBox.textContent = 'Action cannot be empty.'; return; }
+      errorBox.textContent = '';
+      submit.disabled = true;
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/action`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: text, archive: archiveCheckbox.checked}),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({error: res.statusText}));
+          errorBox.textContent = j.error || 'Failed';
+          submit.disabled = false;
+          return;
+        }
+        closeModal();
+        await fetchProjects();
+      } catch (e) {
+        errorBox.textContent = e.message;
+        submit.disabled = false;
+      }
+    }}, 'Record & queue debrief');
+    archiveCheckbox.addEventListener('change', () => {
+      submit.textContent = archiveCheckbox.checked ? 'Record & archive' : 'Record & queue debrief';
+    });
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, 'Record action — ' + p.display_name)),
+      el('div', {class: 'modal-body'},
+        el('div', {class: 'field'},
+          el('label', {}, 'What action did you take?'),
+          textarea
+        ),
+        el('label', {class: 'meta checkbox-row'}, archiveCheckbox, 'Archive this project after recording (skips the debrief round)'),
+        el('div', {class: 'meta'}, 'Appends to ACTIONS.md and queues an action-debrief round (lessons learned → LESSONS.md) for the next hourly run — unless you archive, which records the action and files the project away.'),
+        errorBox
+      ),
+      el('div', {class: 'modal-footer'},
+        el('button', {onclick: closeModal}, 'Cancel'),
+        submit
+      )
+    );
+    setTimeout(() => textarea.focus(), 30);
+  });
+}
+
+function openRename(p) {
+  showModal((modal) => {
+    const errorBox = el('div', {class: 'error'});
+    const input = el('input', {type: 'text', value: p.display_name});
+    const submit = el('button', {class: 'primary', onclick: async () => {
+      const newName = input.value.trim();
+      if (!newName) { errorBox.textContent = 'Name cannot be empty.'; return; }
+      if (newName === p.display_name) { closeModal(); return; }
+      errorBox.textContent = '';
+      submit.disabled = true;
+      try {
+        const res = await fetch(`/api/projects/${encodeURIComponent(p.display_name)}/rename`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({new_name: newName}),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({error: res.statusText}));
+          errorBox.textContent = j.error || 'Failed';
+          submit.disabled = false;
+          return;
+        }
+        closeModal();
+        await fetchProjects();
+      } catch (e) {
+        errorBox.textContent = e.message;
+        submit.disabled = false;
+      }
+    }}, 'Rename');
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, 'Rename — ' + p.display_name)),
+      el('div', {class: 'modal-body'},
+        el('div', {class: 'field'}, el('label', {}, 'New folder name'), input),
+        el('div', {class: 'meta'}, 'Renames the project folder on disk — keeps all its files and history, and it stays in its current section (Projects / Future / Archive).'),
+        errorBox
+      ),
+      el('div', {class: 'modal-footer'},
+        el('button', {onclick: closeModal}, 'Cancel'),
+        submit
+      )
+    );
+    setTimeout(() => { input.focus(); input.select(); }, 30);
+  });
+}
+
+function openNewProject() {
+  showModal((modal) => {
+    const errorBox = el('div', {class: 'error'});
+    const nameInput = el('input', {type: 'text', placeholder: 'e.g. Compare note-taking apps'});
+    const textarea = el('textarea', {placeholder: 'What do you want done?'});
+    const submit = el('button', {class: 'primary', onclick: async () => {
+      const name = nameInput.value.trim();
+      const text = textarea.value.trim();
+      if (!name) { errorBox.textContent = 'Name is required.'; return; }
+      if (!text) { errorBox.textContent = 'Instructions cannot be empty.'; return; }
+      errorBox.textContent = '';
+      submit.disabled = true;
+      try {
+        const res = await fetch('/api/projects', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name, instructions: text}),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({error: res.statusText}));
+          errorBox.textContent = j.error || 'Failed';
+          submit.disabled = false;
+          return;
+        }
+        closeModal();
+        await fetchProjects();
+      } catch (e) {
+        errorBox.textContent = e.message;
+        submit.disabled = false;
+      }
+    }}, 'Create project');
+    modal.append(
+      el('div', {class: 'modal-header'}, el('h2', {}, 'New project')),
+      el('div', {class: 'modal-body'},
+        el('div', {class: 'field'}, el('label', {}, 'Folder name'), nameInput),
+        el('div', {class: 'field'}, el('label', {}, 'Instructions (instructions.md content)'), textarea),
+        errorBox
+      ),
+      el('div', {class: 'modal-footer'},
+        el('button', {onclick: closeModal}, 'Cancel'),
+        submit
+      )
+    );
+    setTimeout(() => nameInput.focus(), 30);
+  });
+}
+
+$('#refresh-btn').addEventListener('click', fetchProjects);
+$('#new-project-btn').addEventListener('click', openNewProject);
+$('#idle-sort-btn').addEventListener('click', () => {
+  const i = IDLE_SORT_CYCLE.indexOf(idleSort);
+  idleSort = IDLE_SORT_CYCLE[(i + 1) % IDLE_SORT_CYCLE.length];
+  localStorage.setItem('idleSort', idleSort);
+  render();
+});
+
+fetchProjects();
+setInterval(fetchProjects, 30000);
+</script>
+</body>
+</html>

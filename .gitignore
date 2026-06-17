@@ -1,0 +1,27 @@
+# ── Understudy .gitignore ─────────────────────────────────────────────
+# Ship the FRAMEWORK, never the DATA or the SECRETS.
+
+# Secrets / local config
+.env
+*.local.json
+
+# The actual queue contents = your real, sensitive projects. Ship the
+# synthetic example only, never the rest.
+Projects/*
+!Projects/.gitkeep
+!Projects/_example/
+Archive/
+Future/
+
+# Run logs (may contain prompts, file paths, personal content)
+.logs/
+*.log
+
+# Python / OS cruft
+__pycache__/
+*.pyc
+.DS_Store
+~$*.docx          # Word lock files
+
+# Kill switch (local-only state)
+.pause
