@@ -8,57 +8,63 @@ Open a new project on a web app, send a Slack message, or drop a folder with an 
 
 *The dashboard, on demo data: every project at a glance — whose court the ball is in (health dot), how stale it is, the next step, and quick actions. Queued projects run next; processed ones wait for your input.*
 
-It is deliberately **not** a framework. There is no database, no message broker,
-no web service to keep running, no DSL. The unit of work is a folder; the state
-lives in Markdown and HTML files you can read, edit, diff, and back up with the
-tools you already have. The agent is whatever LLM CLI you point it at (this was
-built around [Claude Code](https://claude.com/claude-code)'s headless mode, but
-the orchestrator just shells out to a binary — point it elsewhere via
-`CLAUDE_BIN`).
+Under the hood it's deliberately **not** a framework: no database, no message
+broker, no web service to keep running, no DSL. The unit of work is just a folder,
+and the state lives in Markdown and HTML you can read, edit, diff, and back up
+with the tools you already have. The agent is whatever LLM CLI you point it at —
+the orchestrator just shells out to a binary (set `CLAUDE_BIN`).
 
 ## How it works
+
+You live in the **dashboard**; the folders are just how state is stored.
+
+1. **Add work however's handy** — click **+ New project** in the dashboard, post
+   in Slack, or drop a folder with an `instructions.md` under `Projects/`. All
+   three create the same thing: a project folder whose `instructions.md` means
+   "process me."
+2. The **orchestrator** (`orchestrator.sh`) wakes on a schedule, scans `Projects/`
+   for folders with a live `instructions.md`, and invokes the agent **once,
+   headlessly**, with the queue mounted.
+3. The **worker** processes each queued folder — reads any prior work, does the
+   task, writes `SUMMARY.md` + `results.html` back into the folder (their presence
+   = "processed"), and optionally posts a Slack notification.
+4. On a clean run the orchestrator **archives** the instructions file
+   (`instructions.processed-<timestamp>.md`) so the same ask doesn't re-trigger.
+5. You **watch and steer from the dashboard** — a health light per project, the
+   latest summary, the deliverable in one click, and buttons to queue a follow-up
+   round, record a real-world action, rename, park, or archive.
+
+Re-engaging a project is the same gesture from any door — a fresh `instructions.md`
+(a Slack thread reply, a dashboard *New round*, or a dropped file) appends a new
+"Round N" instead of starting over.
+
+Under the hood, the queue is just a directory:
 
 ```
 $QUEUE_ROOT/
 ├── orchestrator.sh        ← scans Projects/, invokes the agent once, headlessly
 ├── worker-prompt.md       ← the spec the headless agent reads
 ├── CLAUDE.md              ← architecture + the agent's operating manual
-├── dashboard/            ← local web UI (Python stdlib, localhost only)
-├── skills/slack-to-queue/← optional: turn Slack messages into queued projects
-├── Projects/             ← ALL active projects live here (the only dir scanned)
+├── dashboard/             ← local web UI (Python stdlib, localhost only) — where you live
+├── skills/slack-to-queue/ ← optional: turn Slack messages into queued projects
+├── Projects/              ← ALL active projects live here (the only dir scanned)
 │   ├── My first project/
-│   │   ├── instructions.md   ← you write this. its presence = "process me"
+│   │   ├── instructions.md   ← created via dashboard / Slack / a dropped file. = "process me"
 │   │   ├── SUMMARY.md        ← agent writes this. its presence = "processed"
 │   │   ├── results.html      ← agent writes this. the actual deliverable
 │   │   └── (any inputs you drop in: PDFs, .docx, notes…)
 │   └── _example/             ← a synthetic example to copy from
-├── Future/               ← parked / someday projects (never scanned)
-└── Archive/              ← wrapped-up projects (never scanned)
+├── Future/                ← parked / someday projects (never scanned)
+└── Archive/               ← wrapped-up projects (never scanned)
 ```
-
-1. **You** create a folder under `Projects/` and drop an `instructions.md`
-   describing what you want.
-2. The **orchestrator** (`orchestrator.sh`) scans `Projects/` for folders with a
-   live `instructions.md`, assembles a worker prompt, and invokes the LLM
-   **once, headlessly**, with the queue directory mounted.
-3. The **worker** processes each queued folder: reads prior work if any, does the
-   task, writes `SUMMARY.md` + `results.html`, optionally posts a notification.
-4. On a clean run the orchestrator **archives** the instructions file
-   (`instructions.processed-<timestamp>.md`) so the same ask doesn't re-trigger.
-5. A **dashboard** (`dashboard/`, a dependency-free Python stdlib server bound to
-   localhost) renders the queue: a health light per project, the latest summary,
-   the deliverable, and buttons to queue follow-up rounds.
-
-Re-engaging a project is the same gesture: drop a fresh `instructions.md` into a
-folder that already has a `SUMMARY.md`, and the agent appends a new "Round N"
-section instead of starting over.
 
 ## Design principles
 
+- **One surface to watch.** You steer everything from the dashboard; the folder,
+  Slack, and (optionally) email are interchangeable ways to feed it — no commands
+  to learn.
 - **Files are the database.** Everything is human-readable Markdown/HTML on disk.
   No hidden state. If the tooling vanished, your work would still be there.
-- **The folder is the API.** Creating work is `mkdir` + write a file. No commands
-  to learn.
 - **Proportional, not enterprise.** Plain shell + Python stdlib + Markdown. No
   dependencies to chase.
 - **Safe by default, powerful when you mean it.** A kill switch, optional
@@ -89,17 +95,17 @@ research) because that's the point. Three controls sit on top:
 ```bash
 git clone <this repo> && cd understudy
 cp .env.example .env             # then edit it
-# Set at least QUEUE_ROOT to an absolute path. The simplest setup is to use the
-# repo itself as the queue root:
-export QUEUE_ROOT="$(pwd)"
+export QUEUE_ROOT="$(pwd)"       # simplest: use the repo itself as the queue root
 
-mkdir -p "$QUEUE_ROOT/Projects/My first project"
-echo "Summarize the attached PDF and list three open questions." \
-    > "$QUEUE_ROOT/Projects/My first project/instructions.md"
+./dashboard/start.sh             # opens http://127.0.0.1:8765 — your control surface
+# In the dashboard, click "+ New project", give it a name and an instruction.
+# (Same thing without the UI — just drop a folder:
+#   mkdir -p "$QUEUE_ROOT/Projects/My first project"
+#   echo "Summarize the attached PDF and list three open questions." \
+#       > "$QUEUE_ROOT/Projects/My first project/instructions.md" )
 
 ./orchestrator.sh --dry-run      # see what's queued
-./orchestrator.sh                # process it
-./dashboard/start.sh             # inspect results at http://127.0.0.1:8765
+./orchestrator.sh                # process it — results land back in the dashboard
 ```
 
 `orchestrator.sh` requires `QUEUE_ROOT` and an LLM CLI on `CLAUDE_BIN` (defaults
@@ -122,6 +128,10 @@ channel into queued projects (top-level message → new project; thread reply �
 new round). Set `SLACK_CHANNEL_ID` and `SLACK_USER_ID` (see `.env.example`) and
 wire the skill to your Slack MCP. Delete the folder if you don't want it.
 
+An **email** door works the same way — a small intake step that turns messages in
+a dedicated mailbox into queued projects — and is an easy addition (the same
+pattern as the Slack intake; not bundled here).
+
 ## Related work / how this differs
 
 Understudy is a deliberately *small, local-first, file-native* take on autonomous
@@ -143,8 +153,7 @@ you, this is a complete, dependency-light implementation of that idea.
 
 ## License & attribution
 
-MIT — see [LICENSE](LICENSE). **Fill in `<YOUR NAME>` in `LICENSE`** before
-publishing.
+MIT — see [LICENSE](LICENSE).
 
 ## Status
 
