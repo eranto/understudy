@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <!-- Understudy favicon: a bespectacled "understudy" head with a finger to the temple. -->
+  <rect width="64" height="64" rx="14" fill="#2563eb"/>
+  <!-- white shirt / shoulders -->
+  <path d="M11 64 C13 52 21 47 32 47 C43 47 51 52 53 64 Z" fill="#ffffff"/>
+  <!-- tan tie -->
+  <path d="M32 47 l-3.2 4 3.2 13 3.2 -13 z" fill="#c9a36b"/>
+  <!-- neck -->
+  <rect x="27" y="41" width="10" height="9" rx="3.5" fill="#e6b78f"/>
+  <!-- head -->
+  <ellipse cx="32" cy="28" rx="15" ry="17" fill="#f1c9a5"/>
+  <!-- cap seam across the forehead -->
+  <path d="M19 21 Q32 16 45 21" fill="none" stroke="#cf9b6f" stroke-width="2" stroke-linecap="round"/>
+  <!-- glasses -->
+  <g fill="#ffffff" fill-opacity="0.22" stroke="#17171a" stroke-width="3" stroke-linejoin="round">
+    <rect x="18.5" y="26" width="11" height="9" rx="3"/>
+    <rect x="34.5" y="26" width="11" height="9" rx="3"/>
+  </g>
+  <path d="M29.5 30 h5" fill="none" stroke="#17171a" stroke-width="3" stroke-linecap="round"/>
+  <!-- finger pointing to the temple -->
+  <path d="M8 50 L18 24" fill="none" stroke="#eabf99" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="18" cy="23.5" r="3.6" fill="#f1c9a5"/>
+</svg>

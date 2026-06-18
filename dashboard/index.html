@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Understudy</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCIgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0Ij4KICA8cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNjQiIHJ4PSIxNCIgZmlsbD0iIzI1NjNlYiIvPgogIDxwYXRoIGQ9Ik0xMSA2NCBDMTMgNTIgMjEgNDcgMzIgNDcgQzQzIDQ3IDUxIDUyIDUzIDY0IFoiIGZpbGw9IiNmZmZmZmYiLz4KICA8cGF0aCBkPSJNMzIgNDcgbC0zLjIgNCAzLjIgMTMgMy4yIC0xMyB6IiBmaWxsPSIjYzlhMzZiIi8+CiAgPHJlY3QgeD0iMjciIHk9IjQxIiB3aWR0aD0iMTAiIGhlaWdodD0iOSIgcng9IjMuNSIgZmlsbD0iI2U2Yjc4ZiIvPgogIDxlbGxpcHNlIGN4PSIzMiIgY3k9IjI4IiByeD0iMTUiIHJ5PSIxNyIgZmlsbD0iI2YxYzlhNSIvPgogIDxwYXRoIGQ9Ik0xOSAyMSBRMzIgMTYgNDUgMjEiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2NmOWI2ZiIgc3Ryb2tlLXdpZHRoPSIyIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8ZyBmaWxsPSIjZmZmZmZmIiBmaWxsLW9wYWNpdHk9IjAuMjIiIHN0cm9rZT0iIzE3MTcxYSIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWpvaW49InJvdW5kIj4KICAgIDxyZWN0IHg9IjE4LjUiIHk9IjI2IiB3aWR0aD0iMTEiIGhlaWdodD0iOSIgcng9IjMiLz4KICAgIDxyZWN0IHg9IjM0LjUiIHk9IjI2IiB3aWR0aD0iMTEiIGhlaWdodD0iOSIgcng9IjMiLz4KICA8L2c+CiAgPHBhdGggZD0iTTI5LjUgMzAgaDUiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzE3MTcxYSIgc3Ryb2tlLXdpZHRoPSIzIiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8cGF0aCBkPSJNOCA1MCBMMTggMjQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iI2VhYmY5OSIgc3Ryb2tlLXdpZHRoPSI2IiBzdHJva2UtbGluZWNhcD0icm91bmQiLz4KICA8Y2lyY2xlIGN4PSIxOCIgY3k9IjIzLjUiIHI9IjMuNiIgZmlsbD0iI2YxYzlhNSIvPgo8L3N2Zz4K">
 <style>
 :root {
   --bg: #f7f7f8;
@@ -44,6 +45,7 @@ body {
   z-index: 10;
 }
 .topbar h1 { margin: 0; font-size: 18px; font-weight: 600; }
+.topbar .logo { flex: 0 0 auto; display: block; }
 .topbar .spacer { flex: 1; }
 .topbar .meta { color: var(--muted); font-size: 12px; }
 button {
@@ -249,6 +251,21 @@ textarea {
 </head>
 <body>
 <div class="topbar">
+  <svg class="logo" width="28" height="28" viewBox="0 0 64 64" aria-hidden="true">
+    <rect width="64" height="64" rx="14" fill="#2563eb"/>
+    <path d="M11 64 C13 52 21 47 32 47 C43 47 51 52 53 64 Z" fill="#ffffff"/>
+    <path d="M32 47 l-3.2 4 3.2 13 3.2 -13 z" fill="#c9a36b"/>
+    <rect x="27" y="41" width="10" height="9" rx="3.5" fill="#e6b78f"/>
+    <ellipse cx="32" cy="28" rx="15" ry="17" fill="#f1c9a5"/>
+    <path d="M19 21 Q32 16 45 21" fill="none" stroke="#cf9b6f" stroke-width="2" stroke-linecap="round"/>
+    <g fill="#ffffff" fill-opacity="0.22" stroke="#17171a" stroke-width="3" stroke-linejoin="round">
+      <rect x="18.5" y="26" width="11" height="9" rx="3"/>
+      <rect x="34.5" y="26" width="11" height="9" rx="3"/>
+    </g>
+    <path d="M29.5 30 h5" fill="none" stroke="#17171a" stroke-width="3" stroke-linecap="round"/>
+    <path d="M8 50 L18 24" fill="none" stroke="#eabf99" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="18" cy="23.5" r="3.6" fill="#f1c9a5"/>
+  </svg>
   <h1>Understudy</h1>
   <span class="meta" id="last-fetched"></span>
   <span class="spacer"></span>
@@ -797,15 +814,15 @@ function openRename(p) {
 function openNewProject() {
   showModal((modal) => {
     const errorBox = el('div', {class: 'error'});
-    const nameInput = el('input', {type: 'text', placeholder: 'e.g. Compare note-taking apps'});
+    const nameInput = el('input', {type: 'text', placeholder: 'leave blank to let the agent title it'});
     const textarea = el('textarea', {placeholder: 'What do you want done?'});
     const submit = el('button', {class: 'primary', onclick: async () => {
       const name = nameInput.value.trim();
       const text = textarea.value.trim();
-      if (!name) { errorBox.textContent = 'Name is required.'; return; }
       if (!text) { errorBox.textContent = 'Instructions cannot be empty.'; return; }
       errorBox.textContent = '';
       submit.disabled = true;
+      submit.textContent = name ? 'Creating…' : 'Naming…';
       try {
         const res = await fetch('/api/projects', {
           method: 'POST',
@@ -816,6 +833,7 @@ function openNewProject() {
           const j = await res.json().catch(() => ({error: res.statusText}));
           errorBox.textContent = j.error || 'Failed';
           submit.disabled = false;
+          submit.textContent = 'Create project';
           return;
         }
         closeModal();
@@ -823,12 +841,13 @@ function openNewProject() {
       } catch (e) {
         errorBox.textContent = e.message;
         submit.disabled = false;
+        submit.textContent = 'Create project';
       }
     }}, 'Create project');
     modal.append(
       el('div', {class: 'modal-header'}, el('h2', {}, 'New project')),
       el('div', {class: 'modal-body'},
-        el('div', {class: 'field'}, el('label', {}, 'Folder name'), nameInput),
+        el('div', {class: 'field'}, el('label', {}, 'Folder name (optional — the agent will name it)'), nameInput),
         el('div', {class: 'field'}, el('label', {}, 'Instructions (instructions.md content)'), textarea),
         errorBox
       ),
@@ -837,7 +856,7 @@ function openNewProject() {
         submit
       )
     );
-    setTimeout(() => nameInput.focus(), 30);
+    setTimeout(() => textarea.focus(), 30);
   });
 }
 
