@@ -57,6 +57,12 @@ SKIP_DIRS = {"dashboard", ".logs", "Archive", "Future", "Projects"}
 # Headless LLM CLI used to auto-name a new project when no folder name is given.
 # Mirrors orchestrator.sh's resolver; override with the CLAUDE_BIN env var.
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or str(Path.home() / ".local/bin/claude")
+# Orchestrator that drains the queue (the same script the loop/cron run), and the
+# kill-switch file it honors. The "Run queue" button shells out to this; override
+# the path with the ORCHESTRATOR env var (defaults to orchestrator.sh in the
+# queue root, next to dashboard/).
+ORCH_SCRIPT = Path(os.environ.get("ORCHESTRATOR") or (TASKS_ROOT / "orchestrator.sh"))
+PAUSE_FILE = TASKS_ROOT / ".pause"
 
 
 # ----- Project scanning -----
@@ -185,6 +191,16 @@ def generate_title(instructions: str) -> str:
     if result.returncode != 0:
         return fallback
     return sanitize_generated_name(result.stdout) or fallback
+
+
+def queue_run_active() -> bool:
+    """True if the orchestrator is currently running (manual, loop, or cron)."""
+    name = ORCH_SCRIPT.name or "orchestrator.sh"
+    try:
+        r = subprocess.run(["pgrep", "-f", name], capture_output=True, text=True)
+    except (FileNotFoundError, OSError):
+        return False
+    return r.returncode == 0 and bool(r.stdout.strip())
 
 
 def safe_resolve_archive(folder_name: str) -> Path | None:
@@ -561,6 +577,9 @@ class Handler(BaseHTTPRequestHandler):
             except OSError as e:
                 return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"scan failed: {e}")
 
+        if path == "/api/run":
+            return self._send_json(HTTPStatus.OK, {"running": queue_run_active()})
+
         m = re.match(r"^/api/projects/([^/]+)/(summary|results|instructions|actions|lessons)$", path)
         if m:
             name = unquote(m.group(1))
@@ -619,6 +638,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/projects":
             return self._handle_new_project()
+
+        if path == "/api/run":
+            return self._handle_run_queue()
 
         m = re.match(r"^/api/projects/([^/]+)/round$", path)
         if m:
@@ -700,6 +722,53 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to create: {e}")
 
         return self._send_json(HTTPStatus.CREATED, project_record(target))
+
+    def _handle_run_queue(self):
+        """Drain the queue now: shell out to the orchestrator in the background.
+
+        Lifts a present .pause for the run and restores it on exit (incl. crash),
+        so a manual drain doesn't silently un-pause the queue. Returns immediately;
+        the run streams to its own .logs/<timestamp>.log."""
+        if queue_run_active():
+            return self._send_error_json(HTTPStatus.CONFLICT, "a queue run is already in progress")
+        if not ORCH_SCRIPT.is_file():
+            return self._send_error_json(
+                HTTPStatus.INTERNAL_SERVER_ERROR,
+                f"orchestrator not found at {ORCH_SCRIPT} (set the ORCHESTRATOR env var)",
+            )
+
+        had_pause = PAUSE_FILE.exists()
+        env = os.environ.copy()
+        env["ORCH"] = str(ORCH_SCRIPT)
+        env["PAUSE"] = str(PAUSE_FILE)
+        env["QUEUE_ROOT"] = str(TASKS_ROOT)  # the orchestrator requires this
+        if had_pause:
+            inner = 'cleanup(){ touch "$PAUSE"; }; trap cleanup EXIT INT TERM; rm -f "$PAUSE"; bash "$ORCH"'
+        else:
+            inner = 'bash "$ORCH"'
+
+        log_dir = TASKS_ROOT / ".logs"
+        try:
+            log_dir.mkdir(parents=True, exist_ok=True)
+            logf = open(log_dir / "dashboard-run.log", "ab")
+        except OSError as e:
+            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"cannot open log: {e}")
+
+        try:
+            subprocess.Popen(
+                ["bash", "-lc", inner],
+                cwd=str(TASKS_ROOT),
+                env=env,
+                stdout=logf,
+                stderr=logf,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+        except OSError as e:
+            logf.close()
+            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to start: {e}")
+
+        return self._send_json(HTTPStatus.ACCEPTED, {"started": True, "pause_lifted": had_pause})
 
     # ---- PUT ----
 

@@ -270,6 +270,7 @@ textarea {
   <span class="meta" id="last-fetched"></span>
   <span class="spacer"></span>
   <button id="refresh-btn">Refresh</button>
+  <button id="run-queue-btn" title="Drain the queue now — runs the orchestrator in the background">Run queue</button>
   <button class="primary" id="new-project-btn">+ New project</button>
 </div>
 
@@ -860,7 +861,43 @@ function openNewProject() {
   });
 }
 
+let runPollTimer = null;
+function trackRun() {
+  const btn = $('#run-queue-btn');
+  if (runPollTimer) return;
+  btn.disabled = true; btn.textContent = 'Running…';
+  runPollTimer = setInterval(async () => {
+    let running = false;
+    try { running = (await (await fetch('/api/run')).json()).running; }
+    catch (e) { return; }  // transient — keep polling
+    if (running) return;
+    clearInterval(runPollTimer); runPollTimer = null;
+    btn.disabled = false; btn.textContent = 'Run queue';
+    fetchProjects();
+  }, 5000);
+}
+async function runQueue() {
+  const btn = $('#run-queue-btn');
+  if (runPollTimer) return;  // a run is already being tracked
+  if (!confirm('Run the queue now?\n\nThis processes every pending project in the background (minutes each). The agent may take real actions — send email, post to Slack — per each project\'s policy.')) return;
+  btn.disabled = true; btn.textContent = 'Starting…';
+  try {
+    const res = await fetch('/api/run', {method: 'POST'});
+    const j = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      alert(j.error || 'Failed to start');
+      btn.disabled = false; btn.textContent = 'Run queue';
+      return;
+    }
+    trackRun();
+  } catch (e) {
+    alert(e.message);
+    btn.disabled = false; btn.textContent = 'Run queue';
+  }
+}
+
 $('#refresh-btn').addEventListener('click', fetchProjects);
+$('#run-queue-btn').addEventListener('click', runQueue);
 $('#new-project-btn').addEventListener('click', openNewProject);
 $('#idle-sort-btn').addEventListener('click', () => {
   const i = IDLE_SORT_CYCLE.indexOf(idleSort);
@@ -871,6 +908,8 @@ $('#idle-sort-btn').addEventListener('click', () => {
 
 fetchProjects();
 setInterval(fetchProjects, 30000);
+// If a run is already underway (loop/cron/another tab), reflect it.
+fetch('/api/run').then(r => r.json()).then(j => { if (j.running) trackRun(); }).catch(() => {});
 </script>
 </body>
 </html>
