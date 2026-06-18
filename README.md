@@ -1,12 +1,8 @@
-# Understudy
+# understudy
 
-*A calm, file-based autonomous task queue for an LLM agent.*
+*A calm, lightweight autonomous task queue for an LLM agent.*
 
-Drop a folder with an `instructions.md` into the queue. A headless agent picks it
-up, does the work — research, drafting, document analysis, real actions — and
-leaves behind a `SUMMARY.md` and a rendered `results.html` you can open in your
-file previewer (e.g. Finder Quick Look). A local web dashboard shows the state of
-every project at a glance. That's the whole idea.
+Open a new project on a web app, send a Slack message, or drop a folder with an `instructions.md` into the queue. A headless agent picks it up, does the work — research, drafting, document analysis, real actions — and creates initial results and a plan you can review on a local web dashboard. You can keep working on the project, graduate it to a dedicated Claude Code session, archive it, or handle it in the future. If projects slug off, understudy tries to understand why and nudge you accordingly. 
 
 ![The Understudy dashboard](docs/dashboard.png)
 
