@@ -42,9 +42,13 @@ import sys
 # as `python3 dashboard/nudge_digest.py`, so this import works from any CWD.
 import server
 
-CHANNEL = os.environ.get("NUDGE_CHANNEL", "#general")
+# config.json (queue root) supplies the nudge channel + which lights count;
+# NUDGE_CHANNEL env still wins over config so a one-off run can redirect output.
+_CFG = server.load_config()
+_NUDGE_CFG = _CFG.get("nudge") or {}
+CHANNEL = os.environ.get("NUDGE_CHANNEL") or _NUDGE_CFG.get("channel") or "#general"
 # Lights (from server.compute_health) that mean "in your court and going stale".
-NUDGE_LIGHTS = ("slipping", "stalled")
+NUDGE_LIGHTS = tuple(_NUDGE_CFG.get("lights") or ("slipping", "stalled"))
 # Model for the throwaway chat-posting session; opus is overkill for one message.
 CLAUDE_MODEL = os.environ.get("NUDGE_CLAUDE_MODEL", "sonnet")
 

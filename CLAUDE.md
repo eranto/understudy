@@ -162,9 +162,15 @@ health light per project):
 
 ## Operating the queue
 
-- **Configuration.** The orchestrator reads the queue root from the `QUEUE_ROOT`
-  environment variable and the LLM CLI path from `CLAUDE_BIN` (optional; defaults
-  to `~/.local/bin/claude`). See `.env.example`.
+- **First-run setup.** For a new install, follow **`SETUP.md`** — a short guided
+  flow that asks the user a few preferences and writes `.env` + `config.json`.
+- **Configuration.** Paths/secrets come from the environment — the orchestrator
+  reads the queue root from `QUEUE_ROOT` and the LLM CLI path from `CLAUDE_BIN`
+  (optional; defaults to `~/.local/bin/claude`); see `.env.example`. Behavior
+  **preferences** (default dashboard sort, staleness thresholds that drive the
+  health lights + nudges, and nudge settings) come from an optional `config.json`
+  at the queue root; see `config.example.json`. A missing `config.json` =
+  built-in defaults (today's behavior).
 - **Orchestrator:** `orchestrator.sh`
   - Manual drain: `QUEUE_ROOT=/path/to/queue ./orchestrator.sh`
   - `--dry-run` lists the queue without invoking the LLM.

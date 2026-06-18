@@ -4,6 +4,7 @@
 # Secrets / local config
 .env
 *.local.json
+config.json        # per-install preferences; ship config.example.json only
 
 # The actual queue contents = your real, sensitive projects. Ship the
 # synthetic example only, never the rest.

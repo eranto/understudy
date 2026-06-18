@@ -910,6 +910,13 @@ fetchProjects();
 setInterval(fetchProjects, 30000);
 // If a run is already underway (loop/cron/another tab), reflect it.
 fetch('/api/run').then(r => r.json()).then(j => { if (j.running) trackRun(); }).catch(() => {});
+// Apply the configured default sort unless the user has a per-browser override.
+fetch('/api/config').then(r => r.json()).then(cfg => {
+  if (!localStorage.getItem('idleSort') && cfg && IDLE_SORTS[cfg.default_sort]) {
+    idleSort = cfg.default_sort;
+    render();
+  }
+}).catch(() => {});
 </script>
 </body>
 </html>
