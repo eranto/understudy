@@ -39,7 +39,7 @@ from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import parse_qs, unquote, urlparse
 
 HOST = "127.0.0.1"
 PORT = int(os.environ.get("DASHBOARD_PORT", "8765"))
@@ -54,6 +54,11 @@ FUTURE_DIR = TASKS_ROOT / "Future"
 # Future/. The queue root itself holds only infrastructure + these category dirs.
 ACTIVE_DIR = TASKS_ROOT / "Projects"
 SKIP_DIRS = {"dashboard", ".logs", "Archive", "Future", "Projects"}
+# File upload (dashboard → project folder): cap size, and never let an upload
+# clobber a system-managed file (those are produced/owned by the worker/dashboard).
+MAX_UPLOAD_BYTES = 50 * 1024 * 1024  # 50 MB
+SYSTEM_FILES = {"SUMMARY.md", "results.html", "ACTIONS.md", "LESSONS.md",
+                "instructions.md", "POLICY.md"}
 # Headless LLM CLI used to auto-name a new project when no folder name is given.
 # Mirrors orchestrator.sh's resolver; override with the CLAUDE_BIN env var.
 CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or str(Path.home() / ".local/bin/claude")
@@ -261,6 +266,16 @@ ACTION_HEADER_RE = re.compile(r"^##\s+\d{4}-\d{2}-\d{2}", re.MULTILINE)
 # Date-capturing variants for the project-health computation.
 ROUND_DATE_RE = re.compile(r"^##\s+Round\s+\d+\s+[—-]\s+(\d{4}-\d{2}-\d{2})", re.MULTILINE)
 ACTION_DATE_RE = re.compile(r"^##\s+(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+
+
+def sanitize_upload_filename(raw: str) -> str:
+    """Reduce a client-supplied filename to a safe basename, or "" if unusable.
+    Strips any directory components (traversal guard), NULs, and hidden dotfiles."""
+    name = Path((raw or "").strip()).name        # drop any path components
+    name = name.replace("\x00", "").strip()
+    if not name or name in (".", "..") or name.startswith("."):
+        return ""
+    return name[:255]
 
 # Project-health thresholds: days the ball has sat in the owner's court with no
 # activity, mapping to the status light (2 / 5 / 10).
@@ -687,6 +702,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/run":
             return self._handle_run_queue()
 
+        m = re.match(r"^/api/projects/([^/]+)/files$", path)
+        if m:
+            name = unquote(m.group(1))
+            return self._handle_upload_file(name)
+
         m = re.match(r"^/api/projects/([^/]+)/round$", path)
         if m:
             name = unquote(m.group(1))
@@ -767,6 +787,46 @@ class Handler(BaseHTTPRequestHandler):
             return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to create: {e}")
 
         return self._send_json(HTTPStatus.CREATED, project_record(target))
+
+    def _handle_upload_file(self, name: str):
+        """Copy an uploaded file into an active project folder. Filename comes
+        from the ?name= query; body is the raw bytes."""
+        folder = find_project(name)
+        if folder is None:
+            return self._send_error_json(HTTPStatus.NOT_FOUND, f"project not found: {name}")
+
+        qs = parse_qs(urlparse(self.path).query)
+        fname = sanitize_upload_filename(qs.get("name", [""])[0])
+        if not fname:
+            return self._send_error_json(HTTPStatus.BAD_REQUEST, "missing or invalid file name")
+        if fname in SYSTEM_FILES or ARCHIVED_RE.match(fname):
+            return self._send_error_json(
+                HTTPStatus.CONFLICT,
+                f"'{fname}' is a system-managed name — rename your file before uploading")
+
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        if length <= 0:
+            return self._send_error_json(HTTPStatus.BAD_REQUEST, "empty upload")
+        if length > MAX_UPLOAD_BYTES:
+            return self._send_error_json(
+                HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "file too large (50 MB max)")
+
+        # Never clobber an existing file: auto-suffix "name (2).ext".
+        dest = folder / fname
+        if dest.exists():
+            stem, suffix = Path(fname).stem, Path(fname).suffix
+            n = 1
+            while dest.exists():
+                n += 1
+                dest = folder / f"{stem} ({n}){suffix}"
+
+        raw = self.rfile.read(length)
+        try:
+            dest.write_bytes(raw)
+        except OSError as e:
+            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to write: {e}")
+        return self._send_json(HTTPStatus.CREATED,
+                               {"ok": True, "filename": dest.name, "bytes": len(raw)})
 
     def _handle_run_queue(self):
         """Drain the queue now: shell out to the orchestrator in the background.

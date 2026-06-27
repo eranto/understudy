@@ -414,6 +414,10 @@ function projectCard(p) {
     if (p.state === 'idle' && p.has_summary) {
       actions.append(el('button', {onclick: () => openRecordAction(p)}, 'Record action'));
     }
+    const fileInput = el('input', {type: 'file', style: 'display:none',
+      onchange: (ev) => { const f = ev.target.files[0]; if (f) uploadFile(p, f); ev.target.value = ''; }});
+    actions.append(fileInput);
+    actions.append(el('button', {title: 'Copy a file into this project folder', onclick: () => fileInput.click()}, 'Upload file'));
     actions.append(el('button', {class: 'future-btn', title: 'Park in Future/ (not processed until brought back)', onclick: (ev) => futureProject(p, ev.currentTarget)}, 'Move to Future'));
     actions.append(el('button', {class: 'archive-btn', title: 'Move to Archive/', onclick: (ev) => archiveProject(p, ev.currentTarget)}, 'Archive'));
   }
@@ -812,11 +816,38 @@ function openRename(p) {
   });
 }
 
+// Upload one file's bytes into a project folder (by display name). Returns the
+// server's {filename, bytes} on success; throws on failure. Shared by the
+// per-project "Upload file" button and the new-project modal's attachments.
+async function uploadFileTo(displayName, file) {
+  const buf = await file.arrayBuffer();
+  const res = await fetch(`/api/projects/${encodeURIComponent(displayName)}/files?name=${encodeURIComponent(file.name)}`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/octet-stream'},
+    body: buf,
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || ('HTTP ' + res.status));
+  return j;
+}
+
+async function uploadFile(p, file) {
+  try {
+    const j = await uploadFileTo(p.display_name, file);
+    const kb = (j.bytes / 1024).toFixed(1);
+    $('#last-fetched').textContent = `Uploaded “${j.filename}” (${kb} KB) → ${p.display_name}`;
+    fetchProjects();
+  } catch (e) {
+    $('#last-fetched').textContent = 'Upload failed: ' + e.message;
+  }
+}
+
 function openNewProject() {
   showModal((modal) => {
     const errorBox = el('div', {class: 'error'});
     const nameInput = el('input', {type: 'text', placeholder: 'leave blank to let the agent title it'});
     const textarea = el('textarea', {placeholder: 'What do you want done?'});
+    const filesInput = el('input', {type: 'file', multiple: true});
     const submit = el('button', {class: 'primary', onclick: async () => {
       const name = nameInput.value.trim();
       const text = textarea.value.trim();
@@ -837,6 +868,19 @@ function openNewProject() {
           submit.textContent = 'Create project';
           return;
         }
+        const created = await res.json().catch(() => null);
+        const files = filesInput.files;
+        if (created && files && files.length) {
+          submit.textContent = 'Uploading…';
+          const failed = [];
+          for (const f of files) {
+            try { await uploadFileTo(created.display_name, f); }
+            catch (e) { failed.push(f.name); }
+          }
+          $('#last-fetched').textContent = failed.length
+            ? `Project created, but ${failed.length} file(s) failed: ${failed.join(', ')} — use “Upload file” on the card to retry.`
+            : `Created “${created.display_name}” with ${files.length} file(s).`;
+        }
         closeModal();
         await fetchProjects();
       } catch (e) {
@@ -850,6 +894,7 @@ function openNewProject() {
       el('div', {class: 'modal-body'},
         el('div', {class: 'field'}, el('label', {}, 'Folder name (optional — the agent will name it)'), nameInput),
         el('div', {class: 'field'}, el('label', {}, 'Instructions (instructions.md content)'), textarea),
+        el('div', {class: 'field'}, el('label', {}, 'Attach files (optional)'), filesInput),
         errorBox
       ),
       el('div', {class: 'modal-footer'},
