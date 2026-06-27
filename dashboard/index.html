@@ -856,10 +856,13 @@ function openNewProject() {
       submit.disabled = true;
       submit.textContent = name ? 'Creating…' : 'Naming…';
       try {
+        // Defer the auto-run to the client: create the folder first, upload any
+        // attachments, THEN start processing — so the worker doesn't begin before
+        // the files have landed.
         const res = await fetch('/api/projects', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
-          body: JSON.stringify({name, instructions: text}),
+          body: JSON.stringify({name, instructions: text, autorun: false}),
         });
         if (!res.ok) {
           const j = await res.json().catch(() => ({error: res.statusText}));
@@ -881,6 +884,8 @@ function openNewProject() {
             ? `Project created, but ${failed.length} file(s) failed: ${failed.join(', ')} — use “Upload file” on the card to retry.`
             : `Created “${created.display_name}” with ${files.length} file(s).`;
         }
+        // Start processing now (honors .pause; no-op if a run is already going).
+        try { await fetch('/api/run', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({respect_pause: true})}); } catch (e) {}
         closeModal();
         await fetchProjects();
       } catch (e) {

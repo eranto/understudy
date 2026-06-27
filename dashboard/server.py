@@ -786,7 +786,13 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to create: {e}")
 
-        return self._send_json(HTTPStatus.CREATED, project_record(target))
+        rec = project_record(target)
+        # Process on add — unless the client will upload attachments first and
+        # trigger the run itself afterward (body autorun:false), to avoid the
+        # worker starting before the files land.
+        if body.get("autorun", True):
+            rec["auto_run"] = self._start_queue_run(respect_pause=True)
+        return self._send_json(HTTPStatus.CREATED, rec)
 
     def _handle_upload_file(self, name: str):
         """Copy an uploaded file into an active project folder. Filename comes
@@ -828,21 +834,23 @@ class Handler(BaseHTTPRequestHandler):
         return self._send_json(HTTPStatus.CREATED,
                                {"ok": True, "filename": dest.name, "bytes": len(raw)})
 
-    def _handle_run_queue(self):
-        """Drain the queue now: shell out to the orchestrator in the background.
+    def _start_queue_run(self, respect_pause=False):
+        """Start a background queue drain via the orchestrator, if possible.
 
-        Lifts a present .pause for the run and restores it on exit (incl. crash),
-        so a manual drain doesn't silently un-pause the queue. Returns immediately;
-        the run streams to its own .logs/<timestamp>.log."""
+        Returns {"started": bool, "reason": str|None, "pause_lifted": bool}. Used by
+        the manual "Run queue" button (respect_pause=False — force a run, lifting and
+        restoring a present .pause) and by the auto-run-on-add/update hooks
+        (respect_pause=True — skip silently when .pause is set, so the kill switch
+        disables automatic processing). Never starts a second concurrent run."""
         if queue_run_active():
-            return self._send_error_json(HTTPStatus.CONFLICT, "a queue run is already in progress")
+            return {"started": False, "reason": "in_progress", "pause_lifted": False}
         if not ORCH_SCRIPT.is_file():
-            return self._send_error_json(
-                HTTPStatus.INTERNAL_SERVER_ERROR,
-                f"orchestrator not found at {ORCH_SCRIPT} (set the ORCHESTRATOR env var)",
-            )
+            return {"started": False, "reason": "no_orchestrator", "pause_lifted": False}
 
         had_pause = PAUSE_FILE.exists()
+        if respect_pause and had_pause:
+            return {"started": False, "reason": "paused", "pause_lifted": False}
+
         env = os.environ.copy()
         env["ORCH"] = str(ORCH_SCRIPT)
         env["PAUSE"] = str(PAUSE_FILE)
@@ -857,7 +865,7 @@ class Handler(BaseHTTPRequestHandler):
             log_dir.mkdir(parents=True, exist_ok=True)
             logf = open(log_dir / "dashboard-run.log", "ab")
         except OSError as e:
-            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"cannot open log: {e}")
+            return {"started": False, "reason": f"log error: {e}", "pause_lifted": False}
 
         try:
             subprocess.Popen(
@@ -871,9 +879,32 @@ class Handler(BaseHTTPRequestHandler):
             )
         except OSError as e:
             logf.close()
-            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to start: {e}")
+            return {"started": False, "reason": f"failed to start: {e}", "pause_lifted": False}
 
-        return self._send_json(HTTPStatus.ACCEPTED, {"started": True, "pause_lifted": had_pause})
+        return {"started": True, "reason": None, "pause_lifted": had_pause}
+
+    def _handle_run_queue(self):
+        """Drain the queue now. The manual "Run queue" button (no body) forces a
+        run, lifting and restoring a present .pause. An optional body
+        {"respect_pause": true} (used by the new-project modal after it finishes
+        uploading attachments) makes it honor the kill switch instead. Returns
+        immediately; the run streams to its own .logs/<timestamp>.log."""
+        body = self._read_json_body()
+        respect = bool(isinstance(body, dict) and body.get("respect_pause"))
+        r = self._start_queue_run(respect_pause=respect)
+        if not r["started"]:
+            if r["reason"] == "in_progress":
+                return self._send_error_json(HTTPStatus.CONFLICT, "a queue run is already in progress")
+            if r["reason"] == "paused":
+                # Kill switch is on and the caller asked to honor it — not an error.
+                return self._send_json(HTTPStatus.OK, {"started": False, "reason": "paused"})
+            if r["reason"] == "no_orchestrator":
+                return self._send_error_json(
+                    HTTPStatus.INTERNAL_SERVER_ERROR,
+                    f"orchestrator not found at {ORCH_SCRIPT} (set the ORCHESTRATOR env var)",
+                )
+            return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, r["reason"] or "failed to start")
+        return self._send_json(HTTPStatus.ACCEPTED, {"started": True, "pause_lifted": r["pause_lifted"]})
 
     # ---- PUT ----
 
@@ -911,7 +942,9 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to write: {e}")
 
-        return self._send_json(HTTPStatus.OK, project_record(folder))
+        rec = project_record(folder)
+        rec["auto_run"] = self._start_queue_run(respect_pause=True)  # process on update
+        return self._send_json(HTTPStatus.OK, rec)
 
     def _handle_new_round(self, name: str):
         body = self._read_json_body()
@@ -935,7 +968,9 @@ class Handler(BaseHTTPRequestHandler):
         except OSError as e:
             return self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to write: {e}")
 
-        return self._send_json(HTTPStatus.CREATED, project_record(folder))
+        rec = project_record(folder)
+        rec["auto_run"] = self._start_queue_run(respect_pause=True)  # process on update
+        return self._send_json(HTTPStatus.CREATED, rec)
 
     def _handle_record_action(self, name: str):
         body = self._read_json_body()
@@ -1012,7 +1047,9 @@ class Handler(BaseHTTPRequestHandler):
                     return self._send_error_json(err[0], err[1])
                 return self._send_json(HTTPStatus.CREATED, project_record(dst, archived=True))
 
-        return self._send_json(HTTPStatus.CREATED, project_record(folder))
+        rec = project_record(folder)
+        rec["auto_run"] = self._start_queue_run(respect_pause=True)  # debrief round → process
+        return self._send_json(HTTPStatus.CREATED, rec)
 
     @staticmethod
     def _archive_folder(src: Path) -> tuple[Path | None, tuple[int, str] | None]:
