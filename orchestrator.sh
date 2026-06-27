@@ -56,75 +56,100 @@ list_instructions() { # $1 = project dir
   find "$1" -maxdepth 1 -iname "*instructions.md" ! -iname "*processed*" 2>/dev/null
 }
 
-candidates=()
-if [ -d "$ACTIVE_ROOT" ]; then
-  while IFS= read -r -d '' dir; do
-    name=$(basename "$dir")
-    case "$name" in .*) continue ;; esac
-    if [ -n "$(list_instructions "$dir" | head -1)" ]; then
-      candidates+=("$name")
-    fi
-  done < <(find "$ACTIVE_ROOT" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
-fi
+# Drain in passes until a scan finds no fresh candidates. A project added while
+# a pass is running (e.g. created from the dashboard during another drain, which
+# the in-flight guard makes defer) is caught by the next pass instead of being
+# orphaned until the next trigger. Guard: track folders attempted this
+# invocation so a no-op folder (worker wrote no SUMMARY.md) isn't retried in an
+# infinite loop; MAX_PASSES is a hard backstop.
+# (Newline-delimited string, not an associative array — macOS /bin/bash is 3.2.)
+attempted=$'\n'
+MAX_PASSES=10
+pass=0
 
-if [ ${#candidates[@]} -eq 0 ]; then
-  echo "[$(ts)] Queue empty — nothing to process."
-  exit 0
-fi
+while : ; do
+  pass=$((pass + 1))
 
-echo "[$(ts)] Unprocessed (${#candidates[@]}):"
-for name in "${candidates[@]}"; do echo "  - $name"; done
+  candidates=()
+  if [ -d "$ACTIVE_ROOT" ]; then
+    while IFS= read -r -d '' dir; do
+      name=$(basename "$dir")
+      case "$name" in .*) continue ;; esac
+      case "$attempted" in *$'\n'"$name"$'\n'*) continue ;; esac   # don't retry within this run
+      if [ -n "$(list_instructions "$dir" | head -1)" ]; then
+        candidates+=("$name")
+      fi
+    done < <(find "$ACTIVE_ROOT" -mindepth 1 -maxdepth 1 -type d -print0 | sort -z)
+  fi
 
-if [ "${1:-}" = "--dry-run" ]; then
-  echo "[$(ts)] Dry run — not invoking the LLM."
-  exit 0
-fi
+  if [ ${#candidates[@]} -eq 0 ]; then
+    [ $pass -eq 1 ] && echo "[$(ts)] Queue empty — nothing to process."
+    break
+  fi
 
-# Assemble the worker prompt: static spec + queue section.
-PROMPT_OUT="$LOG_DIR/last-prompt.md"
-{
-  cat "$PROMPT_FILE"
-  echo
-  echo "## Projects to process (each contains instructions.md)"
-  echo
-  for name in "${candidates[@]}"; do echo "- Projects/$name"; done
-} > "$PROMPT_OUT"
+  echo "[$(ts)] Pass $pass — unprocessed (${#candidates[@]}):"
+  for name in "${candidates[@]}"; do echo "  - $name"; done
 
-RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d_%H-%M-%S).log"
-echo "[$(ts)] Invoking the LLM — log: $RUN_LOG"
+  if [ "${1:-}" = "--dry-run" ]; then
+    echo "[$(ts)] Dry run — not invoking the LLM."
+    exit 0
+  fi
 
-cd "$PROJECTS_ROOT" || exit 1
-"$CLAUDE_BIN" -p "$(cat "$PROMPT_OUT")" \
-  --add-dir "$PROJECTS_ROOT" \
-  --dangerously-skip-permissions \
-  --model opus >> "$RUN_LOG" 2>&1
-status=$?
-echo "[$(ts)] LLM exited with status $status" >> "$RUN_LOG"
+  # Mark this pass's candidates attempted before running, so a no-op folder
+  # (no SUMMARY.md written) isn't rescanned into an endless loop.
+  for name in "${candidates[@]}"; do attempted="$attempted$name"$'\n'; done
 
-if [ $status -ne 0 ]; then
-  echo "[$(ts)] Worker failed (status $status) — skipping post-processing; queue will re-trigger." | tee -a "$RUN_LOG"
-  exit $status
-fi
+  # Assemble the worker prompt: static spec + queue section.
+  PROMPT_OUT="$LOG_DIR/last-prompt.md"
+  {
+    cat "$PROMPT_FILE"
+    echo
+    echo "## Projects to process (each contains instructions.md)"
+    echo
+    for name in "${candidates[@]}"; do echo "- Projects/$name"; done
+  } > "$PROMPT_OUT"
 
-# Post-process each candidate: only if the worker actually wrote SUMMARY.md
-# (idempotent — a no-op folder stays queued and self-heals next run).
-stamp=$(date +%Y%m%d-%H%M)
-for name in "${candidates[@]}"; do
-  dir="$ACTIVE_ROOT/$name"
-  final="Projects/$name"
-  [ -d "$dir" ] || { echo "[$(ts)] Folder vanished mid-run, skipping: $name" >> "$RUN_LOG"; continue; }
-  [ -f "$dir/SUMMARY.md" ] || { echo "[$(ts)] No SUMMARY.md in $name — left queued." >> "$RUN_LOG"; continue; }
+  RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d_%H-%M-%S).log"
+  echo "[$(ts)] Invoking the LLM — log: $RUN_LOG"
 
-  # "Processed" is signalled by the presence of SUMMARY.md (written above).
+  cd "$PROJECTS_ROOT" || exit 1
+  "$CLAUDE_BIN" -p "$(cat "$PROMPT_OUT")" \
+    --add-dir "$PROJECTS_ROOT" \
+    --dangerously-skip-permissions \
+    --model opus >> "$RUN_LOG" 2>&1
+  status=$?
+  echo "[$(ts)] LLM exited with status $status" >> "$RUN_LOG"
 
-  while IFS= read -r f; do
-    [ -n "$f" ] || continue
-    base=$(basename "$f")
-    newname="${base%.md}.processed-$stamp.md"
-    if mv "$f" "$dir/$newname"; then
-      echo "[$(ts)] Archived instructions: $final/$newname" >> "$RUN_LOG"
-    fi
-  done < <(list_instructions "$dir")
+  if [ $status -ne 0 ]; then
+    echo "[$(ts)] Worker failed (status $status) — skipping post-processing; queue will re-trigger." | tee -a "$RUN_LOG"
+    exit $status
+  fi
+
+  # Post-process each candidate: only if the worker actually wrote SUMMARY.md
+  # (idempotent — a no-op folder stays queued and self-heals next run).
+  stamp=$(date +%Y%m%d-%H%M)
+  for name in "${candidates[@]}"; do
+    dir="$ACTIVE_ROOT/$name"
+    final="Projects/$name"
+    [ -d "$dir" ] || { echo "[$(ts)] Folder vanished mid-run, skipping: $name" >> "$RUN_LOG"; continue; }
+    [ -f "$dir/SUMMARY.md" ] || { echo "[$(ts)] No SUMMARY.md in $name — left queued." >> "$RUN_LOG"; continue; }
+
+    # "Processed" is signalled by the presence of SUMMARY.md (written above).
+
+    while IFS= read -r f; do
+      [ -n "$f" ] || continue
+      base=$(basename "$f")
+      newname="${base%.md}.processed-$stamp.md"
+      if mv "$f" "$dir/$newname"; then
+        echo "[$(ts)] Archived instructions: $final/$newname" >> "$RUN_LOG"
+      fi
+    done < <(list_instructions "$dir")
+  done
+
+  if [ $pass -ge $MAX_PASSES ]; then
+    echo "[$(ts)] Reached max passes ($MAX_PASSES) — stopping; any remainder re-triggers next run."
+    break
+  fi
 done
 
 exit 0
