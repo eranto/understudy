@@ -58,6 +58,12 @@ $QUEUE_ROOT/
 └── Archive/               ← wrapped-up projects (never scanned)
 ```
 
+`Projects/`, `Future/`, and `Archive/` hold your data and are **gitignored**, so
+they're never in the repo (only a synthetic `_example/` ships). Both
+`orchestrator.sh` and the dashboard create any that are missing under
+`$QUEUE_ROOT` on startup — a fresh clone or a brand-new queue root just works,
+no manual `mkdir` needed.
+
 ## Design principles
 
 - **One surface to watch.** You steer everything from the dashboard; the folder,
