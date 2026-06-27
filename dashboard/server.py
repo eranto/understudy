@@ -1117,6 +1117,10 @@ def main():
         print(f"ERROR: queue root does not exist: {TASKS_ROOT}", file=sys.stderr)
         print("Set QUEUE_ROOT to your queue root path (see .env.example).", file=sys.stderr)
         sys.exit(1)
+    # The three category dirs hold the queue's data and are gitignored, so a fresh
+    # clone / new queue root won't have them — create them on startup.
+    for d in (ACTIVE_DIR, ARCHIVE_DIR, FUTURE_DIR):
+        d.mkdir(parents=True, exist_ok=True)
     server = ThreadingHTTPServer((HOST, PORT), Handler)
     url = f"http://{HOST}:{PORT}/"
     print(f"Understudy dashboard serving {TASKS_ROOT}")

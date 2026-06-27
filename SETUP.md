@@ -81,7 +81,11 @@ The digest reuses the Step 2 thresholds — no separate staleness config.
 
 ## Step 4 — Create the queue structure
 
-Under `QUEUE_ROOT`, create the dirs Understudy expects (only the missing ones):
+The category dirs (`Projects/`, `Future/`, `Archive/`) hold your queue's data and
+are gitignored, so a fresh clone won't contain them. **You don't need to create
+them by hand** — both the orchestrator (`orchestrator.sh`) and the dashboard
+(`dashboard/server.py`) create any that are missing under `QUEUE_ROOT` on startup
+(and `.logs/` too). To pre-create them explicitly anyway:
 
 ```bash
 mkdir -p "$QUEUE_ROOT/Projects" "$QUEUE_ROOT/Future" "$QUEUE_ROOT/Archive" "$QUEUE_ROOT/.logs"

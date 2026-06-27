@@ -37,6 +37,9 @@ ts() { # ISO-8601 with colon in offset, e.g. 2026-06-11T18:08:13+03:00
 
 [ -d "$PROJECTS_ROOT" ] || { echo "[$(ts)] Queue root not readable: $PROJECTS_ROOT"; exit 1; }
 [ -f "$PROMPT_FILE" ] || { echo "[$(ts)] Worker prompt not found: $PROMPT_FILE (set WORKER_PROMPT)"; exit 1; }
+# The three category dirs hold the queue's data and are gitignored, so a fresh
+# clone / new queue root won't have them — create them on first run.
+mkdir -p "$ACTIVE_ROOT" "$PROJECTS_ROOT/Archive" "$PROJECTS_ROOT/Future"
 mkdir -p "$LOG_DIR"
 find "$LOG_DIR" -name "*.log" -mtime +30 -delete 2>/dev/null
 
