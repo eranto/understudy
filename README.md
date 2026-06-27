@@ -22,9 +22,13 @@ You live in the **dashboard**; the folders are just how state is stored.
    in Slack, or drop a folder with an `instructions.md` under `Projects/`. All
    three create the same thing: a project folder whose `instructions.md` means
    "process me."
-2. The **orchestrator** (`orchestrator.sh`) wakes on a schedule, scans `Projects/`
-   for folders with a live `instructions.md`, and invokes the agent **once,
-   headlessly**, with the queue mounted.
+2. The **orchestrator** (`orchestrator.sh`) scans `Projects/` for folders with a
+   live `instructions.md` and invokes the agent **once, headlessly**, with the
+   queue mounted. When you add or update a project **from the dashboard** (new
+   project, new round, edit instructions, record an action), the dashboard kicks
+   off a drain for it **right away** — no waiting. Folders added another way
+   (Finder, Slack/email intake) are picked up by an optional schedule (see below).
+   Either way a present `.pause` suppresses automatic runs.
 3. The **worker** processes each queued folder — reads any prior work, does the
    task, writes `SUMMARY.md` + `results.html` back into the folder (their presence
    = "processed"), and optionally posts a Slack notification.
@@ -127,12 +131,14 @@ its own parent directory if the `dashboard/` folder lives inside the queue root.
 
 ### Scheduling (optional)
 
-Nothing runs on its own by default. To process on a schedule, point cron or a
+Work you add **from the dashboard** processes immediately (see "How it works"),
+so a schedule is only needed to catch projects added **another way** — Finder
+drops, or Slack/email intake. To process those on a schedule, point cron or a
 launchd/systemd timer at `orchestrator.sh`, or use a session-only recurring
-command in your LLM CLI. The `.pause` file neutralizes any scheduled run without
-unscheduling it. If your queue lives under a synced/cloud folder, the scheduling
-interpreter may need filesystem permission to read it (e.g. Full Disk Access on
-macOS).
+command in your LLM CLI. The `.pause` file neutralizes any scheduled run (and
+dashboard auto-runs) without unscheduling it. If your queue lives under a
+synced/cloud folder, the scheduling interpreter may need filesystem permission
+to read it (e.g. Full Disk Access on macOS).
 
 ### Slack intake (optional)
 
