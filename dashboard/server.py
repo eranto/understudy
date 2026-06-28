@@ -202,13 +202,33 @@ def generate_title(instructions: str) -> str:
 
 
 def queue_run_active() -> bool:
-    """True if the orchestrator is currently running (manual, loop, or cron)."""
+    """True if the orchestrator is currently running (dashboard auto-run, the
+    scheduled loop/cron, or a manual run)."""
     name = ORCH_SCRIPT.name or "orchestrator.sh"
     try:
         r = subprocess.run(["pgrep", "-f", name], capture_output=True, text=True)
     except (FileNotFoundError, OSError):
         return False
     return r.returncode == 0 and bool(r.stdout.strip())
+
+
+def active_folders() -> set:
+    """Folder names a worker is processing right now, from the orchestrator's
+    `.logs/active/` markers. Trusted only while a drain is actually running, so a
+    crashed run's leftover markers don't show as 'processing'. The orchestrator
+    also clears stale markers at the start of each run."""
+    if not queue_run_active():
+        return set()
+    d = TASKS_ROOT / ".logs" / "active"
+    out = set()
+    if d.is_dir():
+        for f in d.iterdir():
+            if f.is_file():
+                try:
+                    out.add(f.read_text(encoding="utf-8").strip())
+                except OSError:
+                    pass
+    return out
 
 
 def safe_resolve_archive(folder_name: str) -> Path | None:
@@ -468,7 +488,7 @@ def compute_health(folder: Path, status, has_instructions: bool,
 
 
 def project_record(folder: Path, archived: bool = False, future: bool = False,
-                   config: dict | None = None) -> dict:
+                   config: dict | None = None, active: set | None = None) -> dict:
     if config is None:
         config = load_config()
     name = folder.name
@@ -558,14 +578,17 @@ def project_record(folder: Path, archived: bool = False, future: bool = False,
         "pending_is_debrief": pending_is_debrief,
         "is_archived": archived,
         "is_future": future,
+        # A worker is processing this folder right now (live, during a drain).
+        "processing": name in (active or set()),
     }
 
 
 def all_projects() -> list[dict]:
     cfg = load_config()  # one read per scan; thresholds applied to every project
-    out = [project_record(p, archived=False, config=cfg) for p in list_project_dirs()]
-    out.extend(project_record(p, archived=True, config=cfg) for p in list_archived_dirs())
-    out.extend(project_record(p, future=True, config=cfg) for p in list_future_dirs())
+    active = active_folders()  # one pgrep per scan, not per project
+    out = [project_record(p, archived=False, config=cfg, active=active) for p in list_project_dirs()]
+    out.extend(project_record(p, archived=True, config=cfg, active=active) for p in list_archived_dirs())
+    out.extend(project_record(p, future=True, config=cfg, active=active) for p in list_future_dirs())
     return out
 
 

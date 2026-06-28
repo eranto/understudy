@@ -51,6 +51,10 @@ if [ -e "$PROJECTS_ROOT/.pause" ]; then
   exit 0
 fi
 
+# Clear any stale "processing" markers left by a crashed prior run.
+rm -f "$LOG_DIR/active/"* 2>/dev/null
+mkdir -p "$LOG_DIR/active"
+
 # A folder is queued if it directly contains a live instructions file:
 # any name ending in "instructions.md" (case-insensitive), excluding archived
 # *.processed-* records. We scan Projects/ (active projects only); Archive/ and
@@ -75,11 +79,17 @@ run_worker() {
     echo "- Projects/$name"
   } > "$prompt_file"
   echo "[$(ts)] [$name] invoking worker — log: $run_log"
+  # Mark this folder as actively processing so the dashboard can show it; remove
+  # the marker when the worker returns. The marker's contents are the exact folder
+  # name (filename is $n-$slug, unique per launch).
+  mkdir -p "$LOG_DIR/active"
+  printf '%s' "$name" > "$LOG_DIR/active/$n-$slug"
   "$CLAUDE_BIN" -p "$(cat "$prompt_file")" \
     --add-dir "$PROJECTS_ROOT" \
     --dangerously-skip-permissions \
     --model opus >> "$run_log" 2>&1
   echo "[$(ts)] [$name] worker exited with status $?" >> "$run_log"
+  rm -f "$LOG_DIR/active/$n-$slug"
 }
 
 # Drain in passes until a scan finds no fresh candidates. A project added while

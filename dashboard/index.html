@@ -106,6 +106,8 @@ section h2 {
 .pill-needs    { background: var(--needs-bg);    color: var(--needs); }
 .pill-progress { background: var(--progress-bg); color: var(--progress); }
 .pill-idle     { background: var(--idle-bg);     color: var(--idle); }
+.pill-processing { background: #dbeafe; color: #1f6feb; animation: pill-pulse 1.4s ease-in-out infinite; }
+@keyframes pill-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 .card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
 .card .actions button,
 .card .actions a.btn {
@@ -326,6 +328,7 @@ function el(tag, attrs={}, ...children) {
 }
 
 function pill(state, status, p) {
+  if (p && p.processing) return el('span', {class: 'pill pill-processing', title: 'A worker is processing this project right now'}, '⚙ processing');
   if (state === 'queued') return el('span', {class: 'pill pill-queued'}, 'queued');
   if (state === 're-engaging') return el('span', {class: 'pill pill-queued'}, (p && p.pending_is_debrief) ? 'queued — debrief' : 'queued — new round');
   if (state === 'idle') {
@@ -462,7 +465,11 @@ async function fetchProjects() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     projects = await res.json();
     render();
-    $('#last-fetched').textContent = 'Last refreshed ' + new Date().toLocaleTimeString();
+    const processing = projects.filter(p => p.processing).length;
+    const queued = projects.filter(p => (p.state === 'queued' || p.state === 're-engaging') && !p.processing).length;
+    let stamp = 'Last refreshed ' + new Date().toLocaleTimeString();
+    if (processing > 0) stamp = `⚙ ${processing} processing · ${queued} queued — ` + stamp;
+    $('#last-fetched').textContent = stamp;
   } catch (e) {
     $('#last-fetched').textContent = 'Refresh failed: ' + e.message;
   }
@@ -920,6 +927,7 @@ function trackRun() {
     let running = false;
     try { running = (await (await fetch('/api/run')).json()).running; }
     catch (e) { return; }  // transient — keep polling
+    fetchProjects();  // refresh cards each tick so 'processing' badges update live
     if (running) return;
     clearInterval(runPollTimer); runPollTimer = null;
     btn.disabled = false; btn.textContent = 'Run queue';
