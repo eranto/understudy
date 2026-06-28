@@ -29,6 +29,9 @@ ACTIVE_ROOT="$PROJECTS_ROOT/Projects"
 PROMPT_FILE="${WORKER_PROMPT:-$(cd "$(dirname "$0")" && pwd)/worker-prompt.md}"
 LOG_DIR="$PROJECTS_ROOT/.logs"
 CLAUDE_BIN="${CLAUDE_BIN:-$HOME/.local/bin/claude}"
+# How many project folders to process concurrently (each gets its own headless
+# worker). Overridable via env; kept modest so a burst doesn't hit API rate limits.
+CONCURRENCY="${UNDERSTUDY_CONCURRENCY:-3}"
 
 ts() { # ISO-8601 with colon in offset, e.g. 2026-06-11T18:08:13+03:00
   local t; t=$(date +%Y-%m-%dT%H:%M:%S%z)
@@ -54,6 +57,29 @@ fi
 # Future/ are separate sibling dirs and are never scanned. Dot-folders skipped.
 list_instructions() { # $1 = project dir
   find "$1" -maxdepth 1 -iname "*instructions.md" ! -iname "*processed*" 2>/dev/null
+}
+
+# Run one headless worker for a SINGLE project folder, with a prompt scoped to
+# just that folder and its own log file, so several can run concurrently without
+# colliding. $1 = folder name, $2 = unique launch index (keeps filenames distinct).
+run_worker() {
+  local name="$1" n="$2"
+  local slug; slug=$(printf '%s' "$name" | tr -c 'A-Za-z0-9._-' '_')
+  local prompt_file="$LOG_DIR/last-prompt-$n-$slug.md"
+  local run_log="$LOG_DIR/$(date +%Y-%m-%d_%H-%M-%S)-$n-$slug.log"
+  {
+    cat "$PROMPT_FILE"
+    echo
+    echo "## Projects to process (each contains instructions.md)"
+    echo
+    echo "- Projects/$name"
+  } > "$prompt_file"
+  echo "[$(ts)] [$name] invoking worker — log: $run_log"
+  "$CLAUDE_BIN" -p "$(cat "$prompt_file")" \
+    --add-dir "$PROJECTS_ROOT" \
+    --dangerously-skip-permissions \
+    --model opus >> "$run_log" 2>&1
+  echo "[$(ts)] [$name] worker exited with status $?" >> "$run_log"
 }
 
 # Drain in passes until a scan finds no fresh candidates. A project added while
@@ -99,49 +125,43 @@ while : ; do
   # (no SUMMARY.md written) isn't rescanned into an endless loop.
   for name in "${candidates[@]}"; do attempted="$attempted$name"$'\n'; done
 
-  # Assemble the worker prompt: static spec + queue section.
-  PROMPT_OUT="$LOG_DIR/last-prompt.md"
-  {
-    cat "$PROMPT_FILE"
-    echo
-    echo "## Projects to process (each contains instructions.md)"
-    echo
-    for name in "${candidates[@]}"; do echo "- Projects/$name"; done
-  } > "$PROMPT_OUT"
-
-  RUN_LOG="$LOG_DIR/$(date +%Y-%m-%d_%H-%M-%S).log"
-  echo "[$(ts)] Invoking the LLM — log: $RUN_LOG"
-
+  # Process the candidates in parallel, CONCURRENCY at a time: one headless worker
+  # per folder. macOS /bin/bash is 3.2 (no `wait -n`), so we run fixed-size
+  # batches — launch up to CONCURRENCY workers, wait for all, then the next batch.
+  # An individual worker failing does NOT abort the others; its folder simply gets
+  # no SUMMARY.md, stays queued, and self-heals on the next run.
+  echo "[$(ts)] Processing ${#candidates[@]} project(s), up to $CONCURRENCY in parallel."
   cd "$PROJECTS_ROOT" || exit 1
-  "$CLAUDE_BIN" -p "$(cat "$PROMPT_OUT")" \
-    --add-dir "$PROJECTS_ROOT" \
-    --dangerously-skip-permissions \
-    --model opus >> "$RUN_LOG" 2>&1
-  status=$?
-  echo "[$(ts)] LLM exited with status $status" >> "$RUN_LOG"
+  total=${#candidates[@]}
+  idx=0
+  launch=0
+  while [ $idx -lt $total ]; do
+    pids=()
+    for name in "${candidates[@]:idx:CONCURRENCY}"; do
+      launch=$((launch + 1))
+      run_worker "$name" "$launch" &
+      pids+=("$!")
+    done
+    wait "${pids[@]}"
+    idx=$((idx + CONCURRENCY))
+  done
 
-  if [ $status -ne 0 ]; then
-    echo "[$(ts)] Worker failed (status $status) — skipping post-processing; queue will re-trigger." | tee -a "$RUN_LOG"
-    exit $status
-  fi
-
-  # Post-process each candidate: only if the worker actually wrote SUMMARY.md
+  # Post-process each candidate: only if its worker actually wrote SUMMARY.md
   # (idempotent — a no-op folder stays queued and self-heals next run).
   stamp=$(date +%Y%m%d-%H%M)
   for name in "${candidates[@]}"; do
     dir="$ACTIVE_ROOT/$name"
     final="Projects/$name"
-    [ -d "$dir" ] || { echo "[$(ts)] Folder vanished mid-run, skipping: $name" >> "$RUN_LOG"; continue; }
-    [ -f "$dir/SUMMARY.md" ] || { echo "[$(ts)] No SUMMARY.md in $name — left queued." >> "$RUN_LOG"; continue; }
+    [ -d "$dir" ] || { echo "[$(ts)] Folder vanished mid-run, skipping: $name"; continue; }
+    [ -f "$dir/SUMMARY.md" ] || { echo "[$(ts)] No SUMMARY.md in $name — left queued (will re-trigger)."; continue; }
 
-    # "Processed" is signalled by the presence of SUMMARY.md (written above).
-
+    # "Processed" is signalled by the presence of SUMMARY.md.
     while IFS= read -r f; do
       [ -n "$f" ] || continue
       base=$(basename "$f")
       newname="${base%.md}.processed-$stamp.md"
       if mv "$f" "$dir/$newname"; then
-        echo "[$(ts)] Archived instructions: $final/$newname" >> "$RUN_LOG"
+        echo "[$(ts)] Archived instructions: $final/$newname"
       fi
     done < <(list_instructions "$dir")
   done
