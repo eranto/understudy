@@ -272,7 +272,7 @@ textarea {
   <span class="meta" id="last-fetched"></span>
   <span class="spacer"></span>
   <button id="refresh-btn">Refresh</button>
-  <button id="run-queue-btn" title="Drain the queue now — runs the orchestrator in the background">Run queue</button>
+  <button id="run-queue-btn" title="Process everything now — including files dropped outside the dashboard & chat intake; overrides .pause">Run now</button>
   <button class="primary" id="new-project-btn">+ New project</button>
 </div>
 
@@ -930,7 +930,7 @@ function trackRun() {
     fetchProjects();  // refresh cards each tick so 'processing' badges update live
     if (running) return;
     clearInterval(runPollTimer); runPollTimer = null;
-    btn.disabled = false; btn.textContent = 'Run queue';
+    btn.disabled = false; btn.textContent = 'Run now';
     fetchProjects();
   }, 5000);
 }
@@ -944,13 +944,13 @@ async function runQueue() {
     const j = await res.json().catch(() => ({}));
     if (!res.ok) {
       alert(j.error || 'Failed to start');
-      btn.disabled = false; btn.textContent = 'Run queue';
+      btn.disabled = false; btn.textContent = 'Run now';
       return;
     }
     trackRun();
   } catch (e) {
     alert(e.message);
-    btn.disabled = false; btn.textContent = 'Run queue';
+    btn.disabled = false; btn.textContent = 'Run now';
   }
 }
 
