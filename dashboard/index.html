@@ -106,6 +106,11 @@ section h2 {
 .pill-needs    { background: var(--needs-bg);    color: var(--needs); }
 .pill-progress { background: var(--progress-bg); color: var(--progress); }
 .pill-idle     { background: var(--idle-bg);     color: var(--idle); }
+/* In-your-court staleness badges (match the legend dot colors). */
+.pill-light-active   { background: #e7f6ec; color: #1a7f37; }
+.pill-light-move     { background: #fbf1d3; color: #8a6109; }
+.pill-light-slipping { background: #fde8d6; color: #b5480a; }
+.pill-light-stalled  { background: #fbe0e2; color: #b3232e; }
 .pill-processing { background: #dbeafe; color: #1f6feb; animation: pill-pulse 1.4s ease-in-out infinite; }
 @keyframes pill-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
 .card .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
@@ -355,7 +360,14 @@ function pill(state, status, p) {
   if (state === 'queued') return mk('pill-queued', 'queued');
   if (state === 're-engaging') return mk('pill-queued', (p && p.pending_is_debrief) ? 'queued — debrief' : 'queued — new round');
   if (state === 'idle') {
-    if (status === 'done') return mk('pill-done', 'awaiting input', 'Processed — ready for your next input (drop another round anytime)');
+    // A processed project in your court: the badge IS the staleness status
+    // (active / your move / slipping / stalled), colored to match the legend dot.
+    if (status === 'done') {
+      const lt = (p && p.health && p.health.light) || '';
+      const lbl = LIGHT_LABEL[lt] || 'awaiting input';
+      const cls = ['active', 'move', 'slipping', 'stalled'].includes(lt) ? 'pill-light-' + lt : 'pill-done';
+      return mk(cls, lbl, 'Processed — ready for your next input (drop another round anytime)');
+    }
     if (status === 'needs-input') return mk('pill-needs', 'needs-input');
     if (status === 'in-progress') return mk('pill-progress', 'in-progress');
     return mk('pill-idle', status || 'idle');
