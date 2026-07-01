@@ -2,7 +2,7 @@
   "_comment": "Understudy per-install preferences. Copy to config.json (gitignored) and edit, or let the guided setup (SETUP.md) write it. Absent file = these defaults. Paths/secrets live in .env, not here.",
 
   "health_days": { "move": 2, "slip": 5, "stalled": 10 },
-  "_health_days": "days a project can sit in your court before its status light turns: <move = green/active, <slip = amber/your-move, <stalled = orange/slipping, else red/stalled. These also drive the dashboard's 'Needs attention' filter (slipping + stalled).",
+  "_health_days": "days a project can sit in your court before its status light turns: <move = green/active, <slip = amber/your-move, <stalled = orange/slipping, else red/stalled. These also drive the attention nudge on a project's badge (slipping/stalled, or blocked, gets a ⚠).",
 
   "momentum_window_days": 28
 }

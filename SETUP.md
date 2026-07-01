@@ -127,8 +127,9 @@ QUEUE_ROOT="$QUEUE_ROOT" ./orchestrator.sh --dry-run   # should print "Queue emp
 ```
 
 Confirm with the user that the dashboard opens and the header looks right. The
-"in your court" list shows newest / just-drained first, with a **Needs attention**
-toggle that filters to the slipping + stalled projects.
+"in your court" list shows newest / just-drained first, and projects that need
+attention (slipping/stalled, or blocked on the user) are flagged with a **⚠ on
+their status badge**.
 
 ## Done
 

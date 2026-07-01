@@ -168,9 +168,9 @@ health light per project):
   reads the queue root from `QUEUE_ROOT` and the LLM CLI path from `CLAUDE_BIN`
   (optional; defaults to `~/.local/bin/claude`); see `.env.example`. Behavior
   **preferences** (staleness thresholds that drive the health lights and the
-  dashboard's "Needs attention" filter) come from an optional `config.json` at
-  the queue root; see `config.example.json`. A missing `config.json` = built-in
-  defaults (today's behavior).
+  badge attention nudges) come from an optional `config.json` at the queue root;
+  see `config.example.json`. A missing `config.json` = built-in defaults
+  (today's behavior).
 - **Orchestrator:** `orchestrator.sh`
   - Manual drain: `QUEUE_ROOT=/path/to/queue ./orchestrator.sh`
   - `--dry-run` lists the queue without invoking the LLM.
@@ -242,9 +242,11 @@ in the trailing 28d) shows cadence. The "In your court" section has a Sort butto
 projects. Both are siblings of `Projects/` at the queue root, and **neither is
 ever scanned** by the orchestrator — nothing in them triggers a run.
 
-Nudging is surfaced **in the dashboard**, not as a separate process: the "In your
-court" section has a **Needs attention** toggle that filters to the projects
-whose health light is `slipping` or `stalled`. (There is no standalone digest.)
+Nudging is surfaced **in the dashboard**, not as a separate process: each project
+whose ball is in your court and needs attention gets a **⚠ on its status badge**
+(amber ring for `slipping`; red pulsing ring for `stalled` or blocked on you /
+`needs-input`). The evaluation is `attentionLevel()` in `index.html`; the status
+line (health dot + "Nd in your court") is unchanged. (There is no standalone digest.)
 
 ## Layout
 

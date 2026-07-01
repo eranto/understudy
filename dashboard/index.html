@@ -249,8 +249,9 @@ textarea {
 .legend { font-size: 12px; color: #6a737d; font-weight: 400; margin-left: 8px; }
 .legend .dot { width: 9px; height: 9px; margin: 0 3px 0 10px; }
 .sort-btn { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; padding: 2px 8px; margin-left: 12px; color: var(--muted); vertical-align: middle; }
-.attn-toggle { font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 12px; color: var(--muted); vertical-align: middle; cursor: pointer; user-select: none; }
-.attn-toggle input { vertical-align: middle; margin-right: 4px; cursor: pointer; }
+/* Nudge: a project whose ball is in your court and slipping (attn) or blocked/stalled (urgent). */
+.pill.attn-attn   { box-shadow: 0 0 0 2px #f6c453; }
+.pill.attn-urgent { box-shadow: 0 0 0 2px #f0a0a0; animation: pill-pulse 1.6s ease-in-out infinite; }
 </style>
 </head>
 <body>
@@ -286,7 +287,6 @@ textarea {
   <section>
     <h2>In your court — needs you
       <span class="legend"><span class="dot dot-stalled"></span>stalled<span class="dot dot-slipping"></span>slipping<span class="dot dot-move"></span>your move<span class="dot dot-active"></span>active</span>
-      <label class="attn-toggle" title="Show only projects that are slipping or stalled"><input type="checkbox" id="needs-attn-toggle"> Needs attention</label>
     </h2>
     <div class="grid" id="idle"></div>
   </section>
@@ -329,18 +329,39 @@ function el(tag, attrs={}, ...children) {
   return e;
 }
 
+// Nudging mechanism: evaluate which in-your-court projects need my attention,
+// and how urgently. '' = none, 'attn' = slipping (5–10d), 'urgent' = blocked on
+// me (needs-input) or gone stale (≥10d). Only projects whose ball is in my court
+// nudge — queued/processing ones are the system's job, not mine.
+function attentionLevel(p) {
+  const h = (p && p.health) || {};
+  if (h.court !== 'you') return '';
+  if (p.status === 'needs-input' || h.light === 'stalled') return 'urgent';
+  if (h.light === 'slipping') return 'attn';
+  return '';
+}
+
 function pill(state, status, p) {
+  // A worker is on it right now — system's court, no attention nudge.
   if (p && p.processing) return el('span', {class: 'pill pill-processing', title: 'A worker is processing this project right now'}, '⚙ processing');
-  if (state === 'queued') return el('span', {class: 'pill pill-queued'}, 'queued');
-  if (state === 're-engaging') return el('span', {class: 'pill pill-queued'}, (p && p.pending_is_debrief) ? 'queued — debrief' : 'queued — new round');
+  const attn = attentionLevel(p);   // '', 'attn', 'urgent'
+  const mk = (cls, label, title) => {
+    const t = (attn ? '⚠ ' : '') + label;
+    const attrs = {class: 'pill ' + cls + (attn ? ' attn-' + attn : '')};
+    if (title) attrs.title = title;
+    else if (attn) attrs.title = (attn === 'urgent' ? 'Needs your attention' : 'Slipping — worth a look');
+    return el('span', attrs, t);
+  };
+  if (state === 'queued') return mk('pill-queued', 'queued');
+  if (state === 're-engaging') return mk('pill-queued', (p && p.pending_is_debrief) ? 'queued — debrief' : 'queued — new round');
   if (state === 'idle') {
-    if (status === 'done') return el('span', {class: 'pill pill-done', title: 'Processed — ready for your next input (drop another round anytime)'}, 'awaiting input');
-    if (status === 'needs-input') return el('span', {class: 'pill pill-needs'}, 'needs-input');
-    if (status === 'in-progress') return el('span', {class: 'pill pill-progress'}, 'in-progress');
-    return el('span', {class: 'pill pill-idle'}, status || 'idle');
+    if (status === 'done') return mk('pill-done', 'awaiting input', 'Processed — ready for your next input (drop another round anytime)');
+    if (status === 'needs-input') return mk('pill-needs', 'needs-input');
+    if (status === 'in-progress') return mk('pill-progress', 'in-progress');
+    return mk('pill-idle', status || 'idle');
   }
-  if (state === 'assembling') return el('span', {class: 'pill pill-idle'}, 'assembling');
-  return el('span', {class: 'pill pill-idle'}, state);
+  if (state === 'assembling') return mk('pill-idle', 'assembling');
+  return mk('pill-idle', state);
 }
 
 function formatTimestamp(iso) {
@@ -443,9 +464,6 @@ const _byName = (a, b) => a.display_name.localeCompare(b.display_name);
 // "In your court" has a single fixed order: newest / just-drained first
 // (ascending staleness — 0 days idle = just processed → top), tiebreak by name.
 const idleCmp = (a, b) => (_stale(a) - _stale(b)) || _byName(a, b);
-// "Needs attention" filter: show only projects whose light is slipping/stalled.
-const _needsAttn = (p) => !!(p.health && (p.health.light === 'slipping' || p.health.light === 'stalled'));
-let needsAttention = localStorage.getItem('needsAttention') === '1';
 
 async function fetchProjects() {
   try {
@@ -472,10 +490,9 @@ function render() {
     else if (p.state === 'idle') buckets.idle.push(p);
     else buckets.assembling.push(p);
   }
-  // "In your court": single order (newest/just-drained first); optional
-  // "Needs attention" filter keeps only slipping/stalled.
+  // "In your court": single order, newest/just-drained first. (Projects that
+  // need attention are flagged on their badge by pill(), not filtered out.)
   buckets.idle.sort(idleCmp);
-  if (needsAttention) buckets.idle = buckets.idle.filter(_needsAttn);
   buckets.queued.sort((a, b) => a.display_name.localeCompare(b.display_name));
   buckets.assembling.sort((a, b) => a.display_name.localeCompare(b.display_name));
   buckets.future.sort((a, b) => a.display_name.localeCompare(b.display_name));
@@ -946,18 +963,6 @@ async function runQueue() {
 $('#refresh-btn').addEventListener('click', fetchProjects);
 $('#run-queue-btn').addEventListener('click', runQueue);
 $('#new-project-btn').addEventListener('click', openNewProject);
-{
-  const attn = $('#needs-attn-toggle');
-  if (attn) {
-    attn.checked = needsAttention;
-    attn.addEventListener('change', () => {
-      needsAttention = attn.checked;
-      localStorage.setItem('needsAttention', needsAttention ? '1' : '0');
-      render();
-    });
-  }
-}
-
 fetchProjects();
 setInterval(fetchProjects, 30000);
 // If a run is already underway (loop/cron/another tab), reflect it.
