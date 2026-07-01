@@ -167,10 +167,10 @@ health light per project):
 - **Configuration.** Paths/secrets come from the environment — the orchestrator
   reads the queue root from `QUEUE_ROOT` and the LLM CLI path from `CLAUDE_BIN`
   (optional; defaults to `~/.local/bin/claude`); see `.env.example`. Behavior
-  **preferences** (default dashboard sort, staleness thresholds that drive the
-  health lights + nudges, and nudge settings) come from an optional `config.json`
-  at the queue root; see `config.example.json`. A missing `config.json` =
-  built-in defaults (today's behavior).
+  **preferences** (staleness thresholds that drive the health lights and the
+  dashboard's "Needs attention" filter) come from an optional `config.json` at
+  the queue root; see `config.example.json`. A missing `config.json` = built-in
+  defaults (today's behavior).
 - **Orchestrator:** `orchestrator.sh`
   - Manual drain: `QUEUE_ROOT=/path/to/queue ./orchestrator.sh`
   - `--dry-run` lists the queue without invoking the LLM.
@@ -242,9 +242,9 @@ in the trailing 28d) shows cadence. The "In your court" section has a Sort butto
 projects. Both are siblings of `Projects/` at the queue root, and **neither is
 ever scanned** by the orchestrator — nothing in them triggers a run.
 
-The optional `dashboard/nudge_digest.py` builds a digest of stalled in-your-court
-projects and (if a chat MCP is wired up) posts it; it is not scheduled by
-default.
+Nudging is surfaced **in the dashboard**, not as a separate process: the "In your
+court" section has a **Needs attention** toggle that filters to the projects
+whose health light is `slipping` or `stalled`. (There is no standalone digest.)
 
 ## Layout
 
@@ -259,7 +259,6 @@ default.
 ├── dashboard/                                 (local web UI; not a queue project)
 │   ├── server.py                              (Python stdlib HTTP server, 127.0.0.1:8765)
 │   ├── index.html                             (single-page UI)
-│   ├── nudge_digest.py                        (optional stalled-project digest)
 │   └── start.sh                               (launcher)
 ├── skills/
 │   └── slack-to-queue/                        (optional Slack intake)

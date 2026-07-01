@@ -249,6 +249,8 @@ textarea {
 .legend { font-size: 12px; color: #6a737d; font-weight: 400; margin-left: 8px; }
 .legend .dot { width: 9px; height: 9px; margin: 0 3px 0 10px; }
 .sort-btn { font-size: 11px; text-transform: none; letter-spacing: 0; font-weight: 400; padding: 2px 8px; margin-left: 12px; color: var(--muted); vertical-align: middle; }
+.attn-toggle { font-size: 12px; text-transform: none; letter-spacing: 0; font-weight: 400; margin-left: 12px; color: var(--muted); vertical-align: middle; cursor: pointer; user-select: none; }
+.attn-toggle input { vertical-align: middle; margin-right: 4px; cursor: pointer; }
 </style>
 </head>
 <body>
@@ -284,7 +286,7 @@ textarea {
   <section>
     <h2>In your court — needs you
       <span class="legend"><span class="dot dot-stalled"></span>stalled<span class="dot dot-slipping"></span>slipping<span class="dot dot-move"></span>your move<span class="dot dot-active"></span>active</span>
-      <button id="idle-sort-btn" class="sort-btn" title="Click to cycle sort order"></button>
+      <label class="attn-toggle" title="Show only projects that are slipping or stalled"><input type="checkbox" id="needs-attn-toggle"> Needs attention</label>
     </h2>
     <div class="grid" id="idle"></div>
   </section>
@@ -438,26 +440,12 @@ let projects = [];
 const _stale = (p) => (p.health && p.health.stale_days != null) ? p.health.stale_days : -1;
 const _byName = (a, b) => a.display_name.localeCompare(b.display_name);
 
-// "Best" score: surface what clears the most for the least friction — things
-// actively blocking on you (needs-input) and going stale, that you can act on
-// right now (a concrete next step), nudged by whether the project is still warm.
-function idleScore(p) {
-  const h = p.health || {};
-  let s = h.stale_days != null ? h.stale_days : 0;   // urgency from neglect
-  if (p.status === 'needs-input') s += 7;            // you're the gate → ~+1 week
-  if (p.next_step) s += 2;                           // actionable now
-  if (h.momentum === 'active') s += 1;               // warm — keep it moving
-  else if (h.momentum === 'ticking') s += 0.5;
-  return s;
-}
-
-const IDLE_SORTS = {
-  smart: { label: 'Best',      cmp: (a, b) => (idleScore(b) - idleScore(a)) || _byName(a, b) },
-  new:   { label: 'New first', cmp: (a, b) => (_stale(a) - _stale(b)) || _byName(a, b) },
-  old:   { label: 'Old first', cmp: (a, b) => (_stale(b) - _stale(a)) || _byName(a, b) },
-};
-const IDLE_SORT_CYCLE = ['smart', 'new', 'old'];
-let idleSort = IDLE_SORTS[localStorage.getItem('idleSort')] ? localStorage.getItem('idleSort') : 'smart';
+// "In your court" has a single fixed order: newest / just-drained first
+// (ascending staleness — 0 days idle = just processed → top), tiebreak by name.
+const idleCmp = (a, b) => (_stale(a) - _stale(b)) || _byName(a, b);
+// "Needs attention" filter: show only projects whose light is slipping/stalled.
+const _needsAttn = (p) => !!(p.health && (p.health.light === 'slipping' || p.health.light === 'stalled'));
+let needsAttention = localStorage.getItem('needsAttention') === '1';
 
 async function fetchProjects() {
   try {
@@ -484,14 +472,15 @@ function render() {
     else if (p.state === 'idle') buckets.idle.push(p);
     else buckets.assembling.push(p);
   }
-  // "In your court" sort is switchable via the section's Sort button (idleSort).
-  buckets.idle.sort(IDLE_SORTS[idleSort].cmp);
-  const sortBtn = $('#idle-sort-btn');
-  if (sortBtn) sortBtn.textContent = 'Sort: ' + IDLE_SORTS[idleSort].label;
+  // "In your court": single order (newest/just-drained first); optional
+  // "Needs attention" filter keeps only slipping/stalled.
+  buckets.idle.sort(idleCmp);
+  if (needsAttention) buckets.idle = buckets.idle.filter(_needsAttn);
   buckets.queued.sort((a, b) => a.display_name.localeCompare(b.display_name));
   buckets.assembling.sort((a, b) => a.display_name.localeCompare(b.display_name));
   buckets.future.sort((a, b) => a.display_name.localeCompare(b.display_name));
-  buckets.archived.sort((a, b) => a.display_name.localeCompare(b.display_name));
+  // Archived: most-recently-archived first.
+  buckets.archived.sort((a, b) => (b.archived_at || 0) - (a.archived_at || 0));
 
   const emptyMessages = {
     queued: 'Nothing queued.',
@@ -957,24 +946,22 @@ async function runQueue() {
 $('#refresh-btn').addEventListener('click', fetchProjects);
 $('#run-queue-btn').addEventListener('click', runQueue);
 $('#new-project-btn').addEventListener('click', openNewProject);
-$('#idle-sort-btn').addEventListener('click', () => {
-  const i = IDLE_SORT_CYCLE.indexOf(idleSort);
-  idleSort = IDLE_SORT_CYCLE[(i + 1) % IDLE_SORT_CYCLE.length];
-  localStorage.setItem('idleSort', idleSort);
-  render();
-});
+{
+  const attn = $('#needs-attn-toggle');
+  if (attn) {
+    attn.checked = needsAttention;
+    attn.addEventListener('change', () => {
+      needsAttention = attn.checked;
+      localStorage.setItem('needsAttention', needsAttention ? '1' : '0');
+      render();
+    });
+  }
+}
 
 fetchProjects();
 setInterval(fetchProjects, 30000);
 // If a run is already underway (loop/cron/another tab), reflect it.
 fetch('/api/run').then(r => r.json()).then(j => { if (j.running) trackRun(); }).catch(() => {});
-// Apply the configured default sort unless the user has a per-browser override.
-fetch('/api/config').then(r => r.json()).then(cfg => {
-  if (!localStorage.getItem('idleSort') && cfg && IDLE_SORTS[cfg.default_sort]) {
-    idleSort = cfg.default_sort;
-    render();
-  }
-}).catch(() => {});
 </script>
 </body>
 </html>

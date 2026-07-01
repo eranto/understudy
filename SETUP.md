@@ -28,8 +28,16 @@ If either is missing, tell the user how to install it and stop here.
 
 Copy `.env.example` to `.env`, then fill in (ask the user, suggest the default):
 
-- **`QUEUE_ROOT`** *(required)* — absolute path to the queue root. **Default: the
-  cloned repo directory itself** (`pwd`). Confirm or take their path.
+- **`QUEUE_ROOT`** *(required)* — where the queue's data lives (`Projects/`,
+  `Archive/`, `Future/`). Ask the user which they want:
+    - **Create a new queue folder** *(default)* — suggest a path like `~/Understudy`
+      (or the cloned repo dir, `pwd`); it's created if missing.
+    - **Connect to an existing queue folder** — take their path (e.g. a folder
+      already holding `Projects/`, or a Drive-synced location). Missing
+      `Projects/`/`Archive/`/`Future/` are auto-created on first run, so pointing
+      at an existing directory just works.
+
+  Write the chosen absolute path to `QUEUE_ROOT`.
 - **`CLAUDE_BIN`** *(optional)* — path to the LLM CLI. Default `~/.local/bin/claude`;
   set it if `command -v claude` shows a different path.
 - **`DASHBOARD_PORT`** *(optional)* — default `8765`. Only ask if they want a
@@ -40,46 +48,18 @@ the user wants Slack intake; skip otherwise.)
 
 ## Step 2 — Preferences → `config.json`
 
-Copy `config.example.json` to `config.json`, then ask these two and write the
-answers. Lead with the recommended default.
+Copy `config.example.json` to `config.json`, then ask about **staleness
+thresholds** — how many days a project can sit waiting on the user before the
+dashboard escalates its status light. Defaults: **your-move at 2 days, slipping
+at 5, stalled at 10**. Offer the defaults; accept custom numbers. Write to
+`health_days.{move, slip, stalled}`.
 
-1. **Default project sort** — how the dashboard orders the "in your court"
-   projects by default:
-   - `smart` — **Best** *(recommended)*: floats the things that most need you
-     (blocked / stale-but-actionable) to the top.
-   - `new` — Newest activity first.
-   - `old` — Oldest / most-stalled first (a strict "you're the bottleneck" view).
-   Write to `default_sort`.
+> Explain: a project < `move` days idle shows green, < `slip` amber, < `stalled`
+> orange, and ≥ `stalled` red. These same cutoffs drive the dashboard's "Needs
+> attention" filter (slipping + stalled). The "in your court" list has a single
+> fixed order — newest / just-drained first — so there's no sort setting to pick.
 
-2. **Staleness thresholds** — how many days a project can sit waiting on the user
-   before the dashboard escalates its status light (and, if nudges are on, before
-   it gets nagged). Defaults: **your-move at 2 days, slipping at 5, stalled at 10**.
-   Offer the defaults; accept custom numbers. Write to
-   `health_days.{move, slip, stalled}`.
-
-   > Explain: a project < `move` days idle shows green, < `slip` amber, <
-   > `stalled` orange, and ≥ `stalled` red. These same cutoffs decide what the
-   > nudge digest flags.
-
-## Step 3 — Nudges (light touch)
-
-A "nudge" is a digest of projects that have gone stale in the user's court,
-posted to a chat channel (or printed). Ask:
-
-- **Enable nudges?** (default: no). If no, leave `nudge.enabled = false` and skip
-  to Step 4.
-- If yes:
-  - **Channel** — e.g. a Slack channel like `#understudy`. Write `nudge.channel`.
-    (Requires a chat MCP tool available to the LLM CLI; otherwise the digest
-    prints to stdout.)
-  - **Cadence** — when to run it, as a cron expression. Suggest weekday mornings:
-    `0 9 * * 1-5`. Write `nudge.cadence`.
-  - Leave `nudge.lights` at `["slipping","stalled"]` unless they ask to also be
-    nudged earlier (add `"move"`).
-
-The digest reuses the Step 2 thresholds — no separate staleness config.
-
-## Step 4 — Create the queue structure
+## Step 3 — Create the queue structure
 
 The category dirs (`Projects/`, `Future/`, `Archive/`) hold your queue's data and
 are gitignored, so a fresh clone won't contain them. **You don't need to create
@@ -91,56 +71,67 @@ them by hand** — both the orchestrator (`orchestrator.sh`) and the dashboard
 mkdir -p "$QUEUE_ROOT/Projects" "$QUEUE_ROOT/Future" "$QUEUE_ROOT/Archive" "$QUEUE_ROOT/.logs"
 ```
 
-## Step 5 — Offer to install a schedule
+## Step 4 — How often to run the queue
 
-Nothing runs on its own by default. If the user enabled nudges (or wants the
-queue drained automatically), **offer** to install a schedule — and only do it
-after they say yes (it touches the OS scheduler).
+Ask **how often the queue should be drained**, offering four choices:
+
+| Choice | cron | launchd `StartInterval` (sec) |
+|--------|------|-------------------------------|
+| Every 15 minutes | `*/15 * * * *` | 900 |
+| Every 30 minutes | `*/30 * * * *` | 1800 |
+| Every hour *(sensible default)* | `0 * * * *` | 3600 |
+| Every 2 hours | `0 */2 * * *` | 7200 |
+
+Nothing runs on its own until this is set up. Once they pick a cadence, **offer**
+to install a schedule that runs `orchestrator.sh` at that interval — and only do
+it after they say yes (it touches the OS scheduler):
 
 - **macOS (launchd)** — write a plist to `~/Library/LaunchAgents/` and
-  `launchctl load` it. Template (fill in `<…>`; use the cadence from Step 3):
+  `launchctl load` it (use the `StartInterval` seconds from the table):
 
   ```xml
   <?xml version="1.0" encoding="UTF-8"?>
   <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
   <plist version="1.0"><dict>
-    <key>Label</key><string>com.understudy.nudge</string>
+    <key>Label</key><string>com.understudy.drain</string>
     <key>ProgramArguments</key>
     <array>
       <string>/bin/bash</string><string>-lc</string>
-      <string>QUEUE_ROOT="<QUEUE_ROOT>" python3 "<QUEUE_ROOT>/dashboard/nudge_digest.py"</string>
+      <string>QUEUE_ROOT="<QUEUE_ROOT>" "<QUEUE_ROOT>/orchestrator.sh"</string>
     </array>
-    <key>StartCalendarInterval</key><dict><key>Hour</key><integer>9</integer><key>Minute</key><integer>0</integer></dict>
-    <key>StandardOutPath</key><string><QUEUE_ROOT>/.logs/nudge.out</string>
-    <key>StandardErrorPath</key><string><QUEUE_ROOT>/.logs/nudge.err</string>
+    <key>StartInterval</key><integer><SECONDS></integer>
+    <key>StandardOutPath</key><string><QUEUE_ROOT>/.logs/drain.out</string>
+    <key>StandardErrorPath</key><string><QUEUE_ROOT>/.logs/drain.err</string>
   </dict></plist>
   ```
   Note: a cloud-synced `QUEUE_ROOT` may require Full Disk Access for `/bin/bash`.
 
-- **Linux (cron)** — add a crontab line (cadence from Step 3). To drain the queue
-  instead of nudging, point at `orchestrator.sh`:
+- **Linux (cron)** — add a crontab line (cron expression from the table):
 
   ```cron
-  0 9 * * 1-5  QUEUE_ROOT="<QUEUE_ROOT>" python3 "<QUEUE_ROOT>/dashboard/nudge_digest.py" >> "<QUEUE_ROOT>/.logs/nudge.log" 2>&1
+  */30 * * * *  QUEUE_ROOT="<QUEUE_ROOT>" "<QUEUE_ROOT>/orchestrator.sh" >> "<QUEUE_ROOT>/.logs/drain.log" 2>&1
   ```
 
-- **Session-only** — if the user runs an LLM CLI session anyway, they can arm a
-  recurring in-session command (re-armed each session) instead of an OS job.
+- **Session-only** — if the user keeps an LLM CLI session open, they can instead
+  arm a recurring in-session command at the chosen interval (re-armed each
+  session) rather than an OS job.
 
-## Step 6 — Launch and verify
+(If Slack/email intake is enabled, run those intake steps on the same schedule,
+just before the drain.)
+
+## Step 5 — Launch and verify
 
 ```bash
 ./dashboard/start.sh            # opens http://127.0.0.1:<port>
 QUEUE_ROOT="$QUEUE_ROOT" ./orchestrator.sh --dry-run   # should print "Queue empty" on a fresh install
 ```
 
-Confirm with the user that the dashboard opens, the header looks right, and the
-"in your court" list is sorted the way they chose. If they enabled nudges, run
-`python3 dashboard/nudge_digest.py --dry-run` to show a sample (empty on a fresh
-install).
+Confirm with the user that the dashboard opens and the header looks right. The
+"in your court" list shows newest / just-drained first, with a **Needs attention**
+toggle that filters to the slipping + stalled projects.
 
 ## Done
 
-Recap what you wrote (`.env`, `config.json`, dirs, any schedule). Point them at
-`README.md` (day-to-day use) and `CLAUDE.md` (how the agent operates). They can
-re-run this flow any time to change preferences — it just rewrites `config.json`.
+Recap what you wrote (`.env`, `config.json`, dirs, and the schedule + its
+interval). Point them at `README.md` (day-to-day use) and `CLAUDE.md` (how the
+agent operates). They can re-run this flow any time to change preferences.

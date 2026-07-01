@@ -103,9 +103,9 @@ research) because that's the point. Three controls sit on top:
 ## Quick start
 
 **Easiest:** clone the repo, then ask your coding agent (Claude Code, Codex, …)
-to *"set up Understudy"* — it follows [`SETUP.md`](SETUP.md) and configures
-sorting and staleness thresholds (and optional nudges) with you, writing `.env`
-and `config.json`.
+to *"set up Understudy"* — it follows [`SETUP.md`](SETUP.md) and, with you, picks
+the queue folder, staleness thresholds, and how often to run the queue, writing
+`.env` and `config.json`.
 
 Or do it by hand:
 

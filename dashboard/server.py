@@ -68,8 +68,8 @@ CLAUDE_BIN = os.environ.get("CLAUDE_BIN") or str(Path.home() / ".local/bin/claud
 # queue root, next to dashboard/).
 ORCH_SCRIPT = Path(os.environ.get("ORCHESTRATOR") or (TASKS_ROOT / "orchestrator.sh"))
 PAUSE_FILE = TASKS_ROOT / ".pause"
-# Optional per-install preferences (sort, staleness thresholds, nudge). Written
-# by the guided setup (SETUP.md). Absent → built-in defaults (DEFAULT_CONFIG).
+# Optional per-install preferences (staleness thresholds). Written by the guided
+# setup (SETUP.md). Absent → built-in defaults (DEFAULT_CONFIG).
 CONFIG_FILE = TASKS_ROOT / "config.json"
 
 
@@ -307,11 +307,8 @@ MOMENTUM_WINDOW_DAYS = 28
 # Built-in defaults — equal to the constants above, so a missing config.json
 # reproduces today's behavior exactly. config.json (if present) is merged over it.
 DEFAULT_CONFIG = {
-    "default_sort": "smart",  # smart | new | old
     "health_days": {"move": HEALTH_MOVE_DAYS, "slip": HEALTH_SLIP_DAYS, "stalled": HEALTH_STALLED_DAYS},
     "momentum_window_days": MOMENTUM_WINDOW_DAYS,
-    "nudge": {"enabled": False, "channel": "#general",
-              "lights": ["slipping", "stalled"], "cadence": "0 9 * * *"},
 }
 
 
@@ -580,6 +577,9 @@ def project_record(folder: Path, archived: bool = False, future: bool = False,
         "is_future": future,
         # A worker is processing this folder right now (live, during a drain).
         "processing": name in (active or set()),
+        # Archive time (folder mtime, stamped on archive) so the dashboard can
+        # sort Archived most-recent-first. Null for non-archived records.
+        "archived_at": (folder.stat().st_mtime if archived else None),
     }
 
 
@@ -1094,6 +1094,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         try:
             src.rename(dst)
+            os.utime(dst, None)  # stamp archive time (folder mtime) for dashboard sorting
         except OSError as e:
             return None, (HTTPStatus.INTERNAL_SERVER_ERROR, f"failed to archive: {e}")
         return dst, None

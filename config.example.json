@@ -1,19 +1,8 @@
 {
   "_comment": "Understudy per-install preferences. Copy to config.json (gitignored) and edit, or let the guided setup (SETUP.md) write it. Absent file = these defaults. Paths/secrets live in .env, not here.",
 
-  "default_sort": "smart",
-  "_default_sort_options": "smart (Best) | new (Newest first) | old (Oldest first) — the dashboard's default ordering of 'in your court' projects",
-
   "health_days": { "move": 2, "slip": 5, "stalled": 10 },
-  "_health_days": "days a project can sit in your court before its light turns: <move = green/active, <slip = amber/your-move, <stalled = orange/slipping, else red/stalled. Also drives which projects the nudge digest flags.",
+  "_health_days": "days a project can sit in your court before its status light turns: <move = green/active, <slip = amber/your-move, <stalled = orange/slipping, else red/stalled. These also drive the dashboard's 'Needs attention' filter (slipping + stalled).",
 
-  "momentum_window_days": 28,
-
-  "nudge": {
-    "enabled": false,
-    "channel": "#general",
-    "lights": ["slipping", "stalled"],
-    "cadence": "0 9 * * *"
-  },
-  "_nudge": "enabled: whether nudge_digest.py posts. channel: chat channel (NUDGE_CHANNEL env overrides). lights: which staleness lights to nag about. cadence: cron expression the setup uses when offering to install a schedule."
+  "momentum_window_days": 28
 }
